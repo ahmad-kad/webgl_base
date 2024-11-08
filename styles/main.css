@@ -1,0 +1,52 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    background-color: #1a1a1a;  /* Dark background as fallback */
+}
+
+#glCanvas {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    background-color: #1a1a1a;  /* Dark background as fallback */
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
+.ui-overlay {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 15px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+}
+
+.controls-info {
+    font-size: 14px;
+}
+
+.controls-info h3 {
+    margin-top: 0;
+}
+
+.controls-info ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.controls-info li {
+    margin: 5px 0;
+}
