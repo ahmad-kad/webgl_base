@@ -5,20 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Point Cloud Viewer</title>
     <link rel="stylesheet" href="styles/main.css">
+    <!-- Add gl-matrix before your module -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
-    
-    <!-- Use CDN for gl-matrix -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
-    
-    <!-- Application -->
-    <script src="js/shaders.js"></script>
-    <script src="js/camera.js"></script>
-    <script src="js/controls.js"></script>
-    <script src="js/viewer-controls.js"></script>
-    <script src="js/plyloader.js"></script>
-    <script src="js/pointcloud-renderer.js"></script>
-    <script src="js/main.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>

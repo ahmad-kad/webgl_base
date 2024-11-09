@@ -1,3 +1,6 @@
+// plyloader.js
+
+// Declare the class first
 class PLYLoader {
     constructor() {
         this.vertices = [];
@@ -107,3 +110,6 @@ class PLYLoader {
         };
     }
 }
+
+// Export the class separately
+export { PLYLoader };
