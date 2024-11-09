@@ -1,38 +1,51 @@
 class Camera {
     constructor(gl) {
-        // Camera position and orientation
-        this.position = glMatrix.vec3.fromValues(0, 5, 10);
-        this.front = glMatrix.vec3.fromValues(0, 0, -1);
-        this.up = glMatrix.vec3.fromValues(0, 1, 0);
-        this.right = glMatrix.vec3.create();
-        this.worldUp = glMatrix.vec3.fromValues(0, 1, 0);
-
+        // Use vec3 from gl-matrix directly
+        this.position = vec3.fromValues(0, 5, 10);
+        this.front = vec3.fromValues(0, 0, -1);
+        this.up = vec3.fromValues(0, 1, 0);
+        this.right = vec3.create();
+        this.worldUp = vec3.fromValues(0, 1, 0);
+        
         // Euler angles
         this.yaw = -90;
         this.pitch = 0;
-
+        
         // Camera options
         this.movementSpeed = 10.0;
         this.mouseSensitivity = 0.1;
-
+        
         this.updateCameraVectors();
     }
 
     updateCameraVectors() {
-        // Calculate new front vector
-        const front = glMatrix.vec3.create();
-        front[0] = Math.cos(glMatrix.glMatrix.toRadian(this.yaw)) * Math.cos(glMatrix.glMatrix.toRadian(this.pitch));
-        front[1] = Math.sin(glMatrix.glMatrix.toRadian(this.pitch));
-        front[2] = Math.sin(glMatrix.glMatrix.toRadian(this.yaw)) * Math.cos(glMatrix.glMatrix.toRadian(this.pitch));
-        glMatrix.vec3.normalize(this.front, front);
-
-        // Re-calculate right and up vectors
-        glMatrix.vec3.cross(this.right, this.front, this.worldUp);
-        glMatrix.vec3.normalize(this.right, this.right);
+        const front = vec3.create();
+        front[0] = Math.cos(this.yaw * Math.PI/180) * Math.cos(this.pitch * Math.PI/180);
+        front[1] = Math.sin(this.pitch * Math.PI/180);
+        front[2] = Math.sin(this.yaw * Math.PI/180) * Math.cos(this.pitch * Math.PI/180);
+        vec3.normalize(this.front, front);
         
-        glMatrix.vec3.cross(this.up, this.right, this.front);
-        glMatrix.vec3.normalize(this.up, this.up);
+        vec3.cross(this.right, this.front, this.worldUp);
+        vec3.normalize(this.right, this.right);
+        
+        vec3.cross(this.up, this.right, this.front);
+        vec3.normalize(this.up, this.up);
     }
+
+    getViewMatrix() {
+        const target = vec3.create();
+        vec3.add(target, this.position, this.front);
+        const viewMatrix = mat4.create();
+        mat4.lookAt(viewMatrix, this.position, target, this.up);
+        return viewMatrix;
+    }
+
+    lookAt(target) {
+        vec3.subtract(this.front, target, this.position);
+        vec3.normalize(this.front, this.front);
+        this.updateCameraVectors();
+    }
+}
 
     processKeyboard(direction, deltaTime) {
         const velocity = this.movementSpeed * deltaTime;

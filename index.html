@@ -3,27 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL 3D Viewer</title>
+    <title>Point Cloud Viewer</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
-    <div class="ui-overlay">
-        <div class="controls-info">
-            <h3>Controls:</h3>
-            <ul>
-                <li>W/S - Move Forward/Backward</li>
-                <li>A/D - Move Left/Right</li>
-                <li>Q/E - Move Up/Down</li>
-                <li>Mouse Drag - Look Around</li>
-            </ul>
-        </div>
-    </div>
+    
+    <!-- Use CDN for gl-matrix -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
-    <script src="node_modules/gl-matrix/gl-matrix-min.js"></script>
+    
+    <!-- Application -->
+    <script src="js/shaders.js"></script>
     <script src="js/camera.js"></script>
     <script src="js/controls.js"></script>
-    <script src="js/grid.js"></script>
+    <script src="js/viewer-controls.js"></script>
+    <script src="js/plyloader.js"></script>
+    <script src="js/pointcloud-renderer.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>
