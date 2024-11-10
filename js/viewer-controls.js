@@ -5,6 +5,8 @@ export class ViewerControls {
         }
         
         this.renderer = renderer;
+        this.xrControls = null;
+        
         this.viewModes = [
             { name: 'RGB', value: 0 },
             { name: 'Depth', value: 1 },
@@ -14,9 +16,10 @@ export class ViewerControls {
         ];
         
         try {
-            this.addStyles();  // Call once here
+            this.addStyles();
             this.setupUI();
-            this.setupXRInteractions();
+            this.setupXRInteractions()
+            
             console.log('ViewerControls initialized successfully');
         } catch (error) {
             console.error('Error setting up viewer controls:', error);
@@ -585,5 +588,188 @@ export class ViewerControls {
                 this.renderer.setViewMode(parseInt(element.value));
             }
         }
+    }
+    setXRControls(xrControls) {
+        this.xrControls = xrControls;
+        this.checkVRSupport();
+    }
+
+
+    async checkVRSupport() {
+        if (!this.xrControls || !('xr' in navigator)) return;
+        
+        try {
+            const isSupported = await navigator.xr.isSessionSupported('immersive-vr');
+            if (isSupported) {
+                this.addVRButton();
+            }
+        } catch (error) {
+            console.error('Error checking VR support:', error);
+        }
+    }
+
+    addVRButton() {
+        const container = document.querySelector('.viewer-controls');
+        if (!container) return;
+
+        // Create VR control group
+        const group = document.createElement('div');
+        group.className = 'control-group vr-control';
+
+        const label = document.createElement('label');
+        label.textContent = 'Virtual Reality';
+
+        const vrButton = document.createElement('button');
+        vrButton.className = 'vr-button';
+        vrButton.innerHTML = `
+            <svg class="vr-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20.5 7H3.5C2.67157 7 2 7.67157 2 8.5V15.5C2 16.3284 2.67157 17 3.5 17H20.5C21.3284 17 22 16.3284 22 15.5V8.5C22 7.67157 21.3284 7 20.5 7Z" stroke="currentColor" stroke-width="2"/>
+                <circle cx="8" cy="12" r="2" stroke="currentColor" stroke-width="2"/>
+                <circle cx="16" cy="12" r="2" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            Enter VR Mode
+        `;
+
+        // Add status indicator
+        const statusIndicator = document.createElement('div');
+        statusIndicator.className = 'vr-status';
+        statusIndicator.textContent = 'VR Ready';
+
+        vrButton.addEventListener('click', () => this.handleVRButtonClick(vrButton, statusIndicator));
+
+        group.appendChild(label);
+        group.appendChild(vrButton);
+        group.appendChild(statusIndicator);
+        container.appendChild(group);
+
+        // Add specific styles for the VR button
+        this.addVRButtonStyles();
+    }
+
+    async handleVRButtonClick(button, statusIndicator) {
+        if (!this.xrControls) return;
+    
+        try {
+            if (!this.xrControls.xrSession) {
+                button.disabled = true;
+                statusIndicator.textContent = 'Starting VR...';
+                
+                await this.xrControls.startXRSession();
+                
+                button.innerHTML = `
+                    <svg class="vr-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="currentColor"/>
+                    </svg>
+                    Exit VR Mode
+                `;
+                statusIndicator.textContent = 'VR Active';
+                statusIndicator.classList.add('active');
+                document.body.classList.add('vr-mode');
+                
+            } else {
+                await this.xrControls.xrSession.end();
+            }
+            button.disabled = false;
+        } catch (error) {
+            console.error('Error handling VR mode:', error);
+            statusIndicator.textContent = 'VR Error';
+            statusIndicator.classList.add('error');
+            button.disabled = false;
+            setTimeout(() => {
+                statusIndicator.textContent = 'VR Ready';
+                statusIndicator.classList.remove('error');
+            }, 3000);
+        }
+    }
+
+    addVRButtonStyles() {
+        const styleSheet = document.querySelector('#viewer-controls-styles');
+        if (!styleSheet) return;
+
+        const vrStyles = `
+            /* VR Button Styles */
+            .vr-control {
+                margin-top: 20px;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 20px;
+            }
+
+            .vr-button {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                width: 100%;
+                padding: 12px 20px;
+                background: #2196F3;
+                border: none;
+                border-radius: 8px;
+                color: white;
+                cursor: pointer;
+                font-size: 16px;
+                transition: all 0.3s ease;
+                min-height: 44px;
+            }
+
+            .vr-button:hover {
+                background: #1976D2;
+                transform: scale(1.02);
+            }
+
+            .vr-icon {
+                width: 24px;
+                height: 24px;
+            }
+
+            .vr-status {
+                margin-top: 8px;
+                font-size: 14px;
+                color: #888;
+                text-align: center;
+                transition: all 0.3s ease;
+            }
+
+            .vr-status.active {
+                color: #4CAF50;
+            }
+
+            .vr-status.error {
+                color: #F44336;
+            }
+
+            /* VR Mode specific styles */
+            .vr-mode .viewer-controls {
+                opacity: 0.9;
+                transform: scale(1.2);
+            }
+
+            .vr-mode .vr-button {
+                background: #F44336;
+            }
+
+            .vr-mode .vr-button:hover {
+                background: #D32F2F;
+            }
+
+            /* Hover effects for VR interaction */
+            .vr-button.xr-hover {
+                transform: scale(1.1);
+                box-shadow: 0 0 20px rgba(33, 150, 243, 0.4);
+            }
+
+            @media (max-width: 768px) {
+                .vr-button {
+                    padding: 10px 15px;
+                    font-size: 14px;
+                }
+
+                .vr-icon {
+                    width: 20px;
+                    height: 20px;
+                }
+            }
+        `;
+
+        styleSheet.textContent += vrStyles;
     }
 }

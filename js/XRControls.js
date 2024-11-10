@@ -7,6 +7,11 @@ export class XRControls {
         this.referenceSpace = null;
         this.controllers = [];
         this.device = null; // 'quest' or 'visionpro'
+        this.handTracking = {
+            enabled: false,
+            joints: new Map(),
+            gestures: new Map()
+        };
         
         this.setupXRButton();
         // Only setup XR if supported
@@ -39,7 +44,6 @@ export class XRControls {
     }
 
     setupXREvents() {
-        // Handle XR input sources
         if ('xr' in navigator) {
             window.addEventListener('vrdisplayconnect', () => {
                 console.log('VR display connected');
@@ -54,12 +58,19 @@ export class XRControls {
     async startXRSession() {
         if (!this.xrSession) {
             try {
-                // Request session with universal features
-                const session = await navigator.xr.requestSession('immersive-vr', {
+                // Request session with enhanced features for Vision Pro
+                const sessionInit = {
                     requiredFeatures: ['local-floor'],
-                    optionalFeatures: ['hand-tracking']
-                });
+                    optionalFeatures: [
+                        'hand-tracking',
+                        'eye-tracking',
+                        'spatial-anchors',
+                        'plane-detection',
+                        'mesh-detection'
+                    ]
+                };
 
+                const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
                 this.xrSession = session;
                 this.xrButton.textContent = 'Exit VR';
 
@@ -73,19 +84,19 @@ export class XRControls {
                 if (this.device === 'quest') {
                     this.setupQuestControls(session);
                 } else if (this.device === 'visionpro') {
-                    this.setupVisionProControls(session);
+                    await this.setupVisionProControls(session);
                 }
 
                 session.addEventListener('end', () => {
                     this.xrSession = null;
                     this.xrButton.textContent = 'Enter VR';
+                    this.cleanupVisionProTracking();
                 });
 
             } catch (error) {
                 console.error('Error starting XR session:', error);
             }
         } else {
-            // End existing session
             try {
                 await this.xrSession.end();
             } catch (error) {
@@ -95,9 +106,14 @@ export class XRControls {
     }
 
     detectDevice(session) {
+        // Enhanced device detection for Vision Pro
         if (session.inputSources?.[0]?.profiles?.includes('oculus-touch')) {
             this.device = 'quest';
-        } else if ('ongesturechange' in window) {
+        } else if (
+            'ongesturechange' in window || 
+            navigator.userAgent.includes('AppleWebKit') && 
+            session.environmentBlendMode === 'mixed'
+        ) {
             this.device = 'visionpro';
         }
         console.log('Detected XR device:', this.device);
@@ -109,7 +125,7 @@ export class XRControls {
             const xrGLLayer = new XRWebGLLayer(session, gl);
             session.updateRenderState({ baseLayer: xrGLLayer });
 
-            // Get reference space
+            // Get reference space with enhanced stability
             this.referenceSpace = await session.requestReferenceSpace('local-floor');
 
             // Start render loop
@@ -120,39 +136,91 @@ export class XRControls {
         }
     }
 
-    setupQuestControls(session) {
+    async setupVisionProControls(session) {
+        // Setup Vision Pro specific features
+        try {
+            // Initialize hand tracking if available
+            if (session.supportedFeatures?.has('hand-tracking')) {
+                this.handTracking.enabled = true;
+                await this.setupHandTracking(session);
+            }
+
+            // Setup pinch gesture recognition
+            this.setupPinchGestureRecognition();
+
+            // Setup spatial event handlers
+            this.setupSpatialEventHandlers(session);
+
+            // Setup eye tracking if available
+            if (session.supportedFeatures?.has('eye-tracking')) {
+                await this.setupEyeTracking(session);
+            }
+
+        } catch (error) {
+            console.error('Error setting up Vision Pro controls:', error);
+        }
+    }
+
+    async setupHandTracking(session) {
         session.addEventListener('inputsourceschange', (event) => {
             event.added.forEach(inputSource => {
-                if (inputSource.handedness) {
-                    this.controllers.push({
-                        inputSource,
-                        gripSpace: inputSource.gripSpace,
-                        targetRaySpace: inputSource.targetRaySpace
-                    });
+                if (inputSource.hand) {
+                    this.handTracking.joints.set(inputSource.handedness, new Map());
                 }
             });
 
             event.removed.forEach(inputSource => {
-                const index = this.controllers.findIndex(c => c.inputSource === inputSource);
-                if (index !== -1) {
-                    this.controllers.splice(index, 1);
+                if (inputSource.hand) {
+                    this.handTracking.joints.delete(inputSource.handedness);
                 }
             });
         });
     }
 
-    setupVisionProControls(session) {
-        if ('ongesturechange' in window) {
-            window.addEventListener('gesturechange', (e) => {
-                this.handleVisionProGesture(e);
-            });
+    setupPinchGestureRecognition() {
+        this.handTracking.gestures.set('pinch', {
+            active: false,
+            startPosition: null,
+            threshold: 0.02 // meters
+        });
+    }
+
+    setupSpatialEventHandlers(session) {
+        if (session.supportedFeatures?.has('spatial-anchors')) {
+            session.addEventListener('spatial-anchor-create', this.handleSpatialAnchor.bind(this));
+        }
+
+        if (session.supportedFeatures?.has('plane-detection')) {
+            session.addEventListener('plane-detected', this.handlePlaneDetection.bind(this));
         }
     }
 
-    handleVisionProGesture(event) {
-        if (event.scale) {
-            const zoomDelta = (event.scale - 1.0) * 0.1;
-            this.camera.position[2] += zoomDelta;
+    async setupEyeTracking(session) {
+        try {
+            const eyeTracker = await session.requestEyeTracker();
+            eyeTracker.addEventListener('eyetrack', this.handleEyeTracking.bind(this));
+        } catch (error) {
+            console.warn('Eye tracking not available:', error);
+        }
+    }
+
+    handleSpatialAnchor(event) {
+        const anchor = event.anchor;
+        // Handle spatial anchor creation
+        console.log('Spatial anchor created:', anchor);
+    }
+
+    handlePlaneDetection(event) {
+        const plane = event.plane;
+        // Handle detected plane
+        console.log('Plane detected:', plane);
+    }
+
+    handleEyeTracking(event) {
+        const gazePoint = event.gazePoint;
+        if (gazePoint) {
+            // Handle gaze point data
+            console.log('Gaze point:', gazePoint);
         }
     }
 
@@ -168,11 +236,9 @@ export class XRControls {
 
         // Handle device-specific input
         if (this.device === 'quest') {
-            this.controllers.forEach(controller => {
-                if (controller.inputSource.gamepad) {
-                    this.handleQuestController(frame, controller.inputSource);
-                }
-            });
+            this.handleQuestFrame(frame);
+        } else if (this.device === 'visionpro') {
+            this.handleVisionProFrame(frame);
         }
 
         // Update camera from pose
@@ -182,35 +248,89 @@ export class XRControls {
         }
     }
 
-    handleQuestController(frame, inputSource) {
-        if (!inputSource.gamepad) return;
+    handleVisionProFrame(frame) {
+        if (!this.handTracking.enabled) return;
 
-        const { buttons, axes } = inputSource.gamepad;
-
-        // Handle thumbstick movement
-        if (Math.abs(axes[0]) > 0.1 || Math.abs(axes[1]) > 0.1) {
-            this.camera.position[0] += axes[0] * 0.1;
-            this.camera.position[2] -= axes[1] * 0.1;
-        }
-
-        // Handle buttons
-        buttons.forEach((button, index) => {
-            if (button.pressed) {
-                switch (index) {
-                    case 0: // Trigger
-                        this.toggleSelection();
-                        break;
-                    case 1: // Grip
-                        this.toggleGrab();
-                        break;
-                    case 3: // Thumbstick button
-                        this.resetView();
-                        break;
-                }
+        for (const inputSource of frame.session.inputSources) {
+            if (inputSource.hand) {
+                this.updateHandJoints(frame, inputSource);
+                this.detectPinchGesture(inputSource.handedness);
             }
-        });
+        }
     }
 
+    updateHandJoints(frame, inputSource) {
+        const hand = inputSource.hand;
+        const handJoints = this.handTracking.joints.get(inputSource.handedness);
+
+        for (const joint of hand.values()) {
+            const pose = frame.getJointPose(joint, this.referenceSpace);
+            if (pose) {
+                handJoints.set(joint.jointName, pose);
+            }
+        }
+    }
+
+    detectPinchGesture(handedness) {
+        const joints = this.handTracking.joints.get(handedness);
+        if (!joints) return;
+
+        const thumb = joints.get('thumb-tip');
+        const index = joints.get('index-finger-tip');
+
+        if (thumb && index) {
+            const distance = this.calculateJointDistance(thumb, index);
+            const pinchData = this.handTracking.gestures.get('pinch');
+
+            if (distance < pinchData.threshold && !pinchData.active) {
+                this.startPinchGesture(thumb.transform.position);
+            } else if (distance >= pinchData.threshold && pinchData.active) {
+                this.endPinchGesture();
+            }
+        }
+    }
+
+    calculateJointDistance(joint1, joint2) {
+        const pos1 = joint1.transform.position;
+        const pos2 = joint2.transform.position;
+        return Math.sqrt(
+            Math.pow(pos2.x - pos1.x, 2) +
+            Math.pow(pos2.y - pos1.y, 2) +
+            Math.pow(pos2.z - pos1.z, 2)
+        );
+    }
+
+    startPinchGesture(position) {
+        const pinchData = this.handTracking.gestures.get('pinch');
+        pinchData.active = true;
+        pinchData.startPosition = position;
+        this.handlePinchStart(position);
+    }
+
+    endPinchGesture() {
+        const pinchData = this.handTracking.gestures.get('pinch');
+        pinchData.active = false;
+        pinchData.startPosition = null;
+        this.handlePinchEnd();
+    }
+
+    handlePinchStart(position) {
+        // Handle pinch gesture start
+        console.log('Pinch gesture started at:', position);
+    }
+
+    handlePinchEnd() {
+        // Handle pinch gesture end
+        console.log('Pinch gesture ended');
+    }
+
+    cleanupVisionProTracking() {
+        this.handTracking.joints.clear();
+        this.handTracking.gestures.clear();
+        this.handTracking.enabled = false;
+    }
+
+    // Existing methods remain unchanged...
     updateCameraFromXRPose(view) {
         const matrix = view.transform.matrix;
         
@@ -231,15 +351,5 @@ export class XRControls {
     resetView() {
         this.camera.position = [0, 1.6, 3];
         this.camera.rotation = { x: 0, y: 0, z: 0 };
-    }
-
-    toggleSelection() {
-        // Implement selection logic here
-        console.log('Selection toggled');
-    }
-
-    toggleGrab() {
-        // Implement grab logic here
-        console.log('Grab toggled');
     }
 }

@@ -32,7 +32,7 @@ class App {
             return;
         }
 
-        this.gl = this.canvas.getContext('webgl');
+        this.gl = this.canvas.getContext('webgl', { xrCompatible: true });
         if (!this.gl) {
             console.error('Unable to initialize WebGL. Your browser may not support it.');
             return;
@@ -61,11 +61,13 @@ class App {
             this.pointCloudRenderer = new PointCloudRenderer(this.gl);
             console.log('Point cloud renderer initialized');
     
-            // Initialize XR controls
+            // Initialize XR controls first
             this.xrControls = new XRControls(this.pointCloudRenderer, this.camera);
             console.log('XR controls initialized');
     
+            // Initialize viewer controls and pass XR controls reference
             this.viewerControls = new ViewerControls(this.pointCloudRenderer);
+            this.viewerControls.setXRControls(this.xrControls);  
             console.log('Viewer controls initialized');
     
             this.grid = new Grid(this.gl);
@@ -80,6 +82,25 @@ class App {
                 this.camera.position = cameraSetup.position;
                 this.camera.lookAt(cameraSetup.target);
                 this.camera.up = cameraSetup.up;
+            });
+
+            // Setup XR session end handler
+            window.addEventListener('xrsessionend', () => {
+                const vrButton = document.querySelector('.vr-button');
+                const statusIndicator = document.querySelector('.vr-status');
+                if (vrButton && statusIndicator) {
+                    vrButton.innerHTML = `
+                        <svg class="vr-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M20.5 7H3.5C2.67157 7 2 7.67157 2 8.5V15.5C2 16.3284 2.67157 17 3.5 17H20.5C21.3284 17 22 16.3284 22 15.5V8.5C22 7.67157 21.3284 7 20.5 7Z" stroke="currentColor" stroke-width="2"/>
+                            <circle cx="8" cy="12" r="2" stroke="currentColor" stroke-width="2"/>
+                            <circle cx="16" cy="12" r="2" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        Enter VR Mode
+                    `;
+                    statusIndicator.textContent = 'VR Ready';
+                    statusIndicator.classList.remove('active');
+                }
+                document.body.classList.remove('vr-mode');
             });
     
         } catch (error) {
@@ -178,16 +199,6 @@ class App {
         this.render(0);
     }
 }
-
-// Initialize app when window loads
-window.addEventListener('load', () => {
-    console.log('Window loaded, initializing application...');
-    try {
-        new App();
-    } catch (error) {
-        console.error('Error initializing app:', error);
-    }
-});
 
 window.addEventListener('load', async () => {
     console.log('Window loaded, initializing application...');

@@ -16,9 +16,9 @@ class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
         }
         super().__init__(*args, **kwargs)
 
-PORT = 8000
+PORT = 8001
 Handler = MyHttpRequestHandler
 
-with socketserver.TCPServer(("", PORT), Handler) as httpd:
+with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
     print(f"Serving at port {PORT}")
     httpd.serve_forever()
