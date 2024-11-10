@@ -1,15 +1,20 @@
+import { mat4, vec3 } from 'https://cdn.skypack.dev/gl-matrix';
 import { Camera } from './camera.js';
 import { Controls } from './controls.js';
 import { ViewerControls } from './viewer-controls.js';
 import { PointCloudRenderer } from './pointcloud-renderer.js';
 import { Grid } from './grid.js';
-import { PLYLoader } from './plyloader.js';
+import { ModelLoader } from './model-loader.js'; // Keep this import
 import { SHADERS } from './shaders.js';
 
 class App {
     constructor() {
-        this.mat4 = glMatrix.mat4;  // Use global glMatrix
         console.log('Initializing App...');
+        // Store gl-matrix functions
+        window.glMatrix = { mat4, vec3 };
+        this.mat4 = mat4;
+        this.vec3 = vec3;
+        
         this.initializeWebGL();
         if (this.gl) {
             this.initializeComponents();
@@ -17,7 +22,7 @@ class App {
             this.startRenderLoop();
         }
     }
-
+    
     initializeWebGL() {
         console.log('Initializing WebGL...');
         this.canvas = document.querySelector('#glCanvas');
@@ -54,6 +59,9 @@ class App {
 
             this.pointCloudRenderer = new PointCloudRenderer(this.gl);
             console.log('Point cloud renderer initialized');
+
+            this.viewerControls = new ViewerControls(this.pointCloudRenderer);
+            console.log('Viewer controls initialized');
 
             this.grid = new Grid(this.gl);
             console.log('Grid initialized');
@@ -180,7 +188,7 @@ window.addEventListener('load', async () => {
             import('./viewer-controls.js'),
             import('./pointcloud-renderer.js'),
             import('./grid.js'),
-            import('./plyloader.js'),
+            import('./model-loader.js'),
             import('./shaders.js')
         ]);
         
@@ -189,4 +197,9 @@ window.addEventListener('load', async () => {
     } catch (error) {
         console.error('Error loading modules or initializing app:', error);
     }
+});
+
+window.addEventListener('modelLoaded', (event) => {
+    const { bounds, vertexCount } = event.detail;
+    console.log(`Model loaded with ${vertexCount} vertices`);
 });

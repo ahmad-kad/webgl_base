@@ -1,5 +1,6 @@
-// js/shaders.js
+// shaders.js
 console.log('Loading shaders module...');
+
 export const SHADERS = {
     grid: {
         vertex: `
@@ -33,28 +34,21 @@ export const SHADERS = {
             uniform mat4 uModelViewMatrix;
             uniform mat4 uProjectionMatrix;
             uniform float uPointSize;
-            uniform int uViewMode;        // Make sure this is declared as int
-            uniform float uNearPlane;
-            uniform float uFarPlane;
             
             varying vec3 vColor;
             varying vec3 vNormal;
             varying float vDepth;
             varying float vCurvature;
-            varying vec4 vPosition;
-            varying float vViewMode;      // Add this varying to pass viewMode to fragment
             
             void main() {
                 vec4 mvPosition = uModelViewMatrix * vec4(aPosition, 1.0);
                 gl_Position = uProjectionMatrix * mvPosition;
                 gl_PointSize = uPointSize;
                 
-                vPosition = gl_Position;
                 vNormal = normalize((uModelViewMatrix * vec4(aNormal, 0.0)).xyz);
                 vDepth = -mvPosition.z;
                 vCurvature = aCurvature;
                 vColor = aColor;
-                vViewMode = float(uViewMode);  // Pass viewMode to fragment shader
             }
         `,
         fragment: `
@@ -63,50 +57,56 @@ export const SHADERS = {
             #endif
             
             precision highp float;
-            
             varying vec3 vColor;
             varying vec3 vNormal;
             varying float vDepth;
             varying float vCurvature;
-            varying vec4 vPosition;
-            varying float vViewMode;      // Receive viewMode from vertex shader
             
             uniform float uNearPlane;
             uniform float uFarPlane;
+            uniform int uViewMode;
             
             void main() {
+                // Discard pixels outside point circle
                 vec2 coord = gl_PointCoord - vec2(0.5);
                 if(length(coord) > 0.5) {
                     discard;
                 }
                 
                 vec4 finalColor;
-                int viewMode = int(vViewMode);  // Convert back to int
                 
-                if (viewMode == 0) {
-                    finalColor = vec4(vColor, 1.0); // RGB
-                } else if (viewMode == 1) {
-                    float alpha = 1.0 - (vDepth - uNearPlane) / (uFarPlane - uNearPlane);
-                    finalColor = vec4(vColor, alpha); // Alpha
-                } else if (viewMode == 2) {
+                // View mode selection
+                if (uViewMode == 0) {
+                    finalColor = vec4(vColor, 1.0); // RGB mode
+                } 
+                else if (uViewMode == 1) {
                     float depth = (vDepth - uNearPlane) / (uFarPlane - uNearPlane);
-                    finalColor = vec4(vec3(depth), 1.0); // Depth
-                } else if (viewMode == 3) {
-                    finalColor = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0); // Normal
-                } else if (viewMode == 4) {
-                    finalColor = vec4(vec3(vCurvature), 1.0); // Curvature
-                } else if (viewMode == 5) {
+                    finalColor = vec4(vec3(1.0 - depth), 1.0); // Depth mode
+                } 
+                else if (uViewMode == 2) {
+                    finalColor = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0); // Normal mode
+                } 
+                else if (uViewMode == 3) {
+                    finalColor = vec4(vec3(vCurvature), 1.0); // Curvature mode
+                } 
+                else if (uViewMode == 4) {
                     #ifdef GL_OES_standard_derivatives
-                        float edge = fwidth(vDepth) * 10.0;
+                        float dx = dFdx(vDepth);
+                        float dy = dFdy(vDepth);
+                        float edgeStrength = length(vec2(dx, dy));
+                        finalColor = vec4(vec3(1.0 - edgeStrength * 10.0), 1.0); // Edge detection
                     #else
-                        float edge = 0.0;
+                        finalColor = vec4(vColor, 1.0);
                     #endif
-                    finalColor = vec4(vec3(1.0 - edge), 1.0); // Edge
-                } else {
+                }
+                else {
                     finalColor = vec4(vColor, 1.0); // Default to RGB
                 }
+                
                 gl_FragColor = finalColor;
             }
         `
     }
 };
+
+console.log('Shaders module loaded successfully');
