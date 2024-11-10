@@ -6,6 +6,7 @@ import { PointCloudRenderer } from './pointcloud-renderer.js';
 import { Grid } from './grid.js';
 import { ModelLoader } from './model-loader.js'; // Keep this import
 import { SHADERS } from './shaders.js';
+import { XRControls } from './XRControls.js';
 
 class App {
     constructor() {
@@ -53,25 +54,34 @@ class App {
         try {
             this.camera = new Camera();
             console.log('Camera initialized');
-
+    
             this.controls = new Controls(this.camera, this.canvas);
             console.log('Controls initialized');
-
+    
             this.pointCloudRenderer = new PointCloudRenderer(this.gl);
             console.log('Point cloud renderer initialized');
-
+    
+            // Initialize XR controls
+            this.xrControls = new XRControls(this.pointCloudRenderer, this.camera);
+            console.log('XR controls initialized');
+    
             this.viewerControls = new ViewerControls(this.pointCloudRenderer);
             console.log('Viewer controls initialized');
-
+    
             this.grid = new Grid(this.gl);
             console.log('Grid initialized');
-
+    
             this.lastFrame = 0;
             this.isLoading = false;
-
-            // Initial point cloud load
-            this.loadPointCloud('models/example.ply');
-
+    
+            // Add event listener for model loading
+            window.addEventListener('modelLoaded', (event) => {
+                const cameraSetup = this.pointCloudRenderer.getCameraPositionFromBounds();
+                this.camera.position = cameraSetup.position;
+                this.camera.lookAt(cameraSetup.target);
+                this.camera.up = cameraSetup.up;
+            });
+    
         } catch (error) {
             console.error('Error initializing components:', error);
             throw error;
@@ -134,28 +144,29 @@ class App {
             now *= 0.001;
             const deltaTime = now - this.lastFrame;
             this.lastFrame = now;
-
-            // Update controls
-            this.controls.update(deltaTime);
-
-            // Clear canvas
+    
+            // XR VS Normal Controls
+            if (!this.xrControls.xrSession) {
+                this.controls.update(deltaTime);
+            }
+    
             this.gl.clearColor(0.1, 0.1, 0.1, 1.0);
             this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
-
-            // Setup matrices
+    
+            // SMatrix
             const aspect = this.gl.canvas.clientWidth / this.gl.canvas.clientHeight;
             const projectionMatrix = this.mat4.create();
             this.mat4.perspective(projectionMatrix, 45 * Math.PI / 180, aspect, 0.1, 1000.0);
-
+    
             const viewMatrix = this.camera.getViewMatrix();
             const modelMatrix = this.mat4.create();
             const modelViewMatrix = this.mat4.create();
             this.mat4.multiply(modelViewMatrix, viewMatrix, modelMatrix);
-
+    
             // Render scene
             this.grid.draw(projectionMatrix, modelViewMatrix);
             this.pointCloudRenderer.draw(projectionMatrix, modelViewMatrix);
-
+    
             requestAnimationFrame((now) => this.render(now));
         } catch (error) {
             console.error('Error in render loop:', error);

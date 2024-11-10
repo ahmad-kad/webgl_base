@@ -14,10 +14,9 @@ export class ViewerControls {
         ];
         
         try {
-            // Add styles first
-            this.addStyles();
-            // Then setup UI
+            this.addStyles();  // Call once here
             this.setupUI();
+            this.setupXRInteractions();
             console.log('ViewerControls initialized successfully');
         } catch (error) {
             console.error('Error setting up viewer controls:', error);
@@ -46,9 +45,6 @@ export class ViewerControls {
         
         // Point size control
         container.appendChild(this.createPointSizeControl());
-        
-        // Add styles
-        this.addStyles();
         
         document.body.appendChild(container);
     }
@@ -200,6 +196,7 @@ export class ViewerControls {
         
         const slider = document.createElement('input');
         slider.type = 'range';
+        slider.id = 'pointSizeSlider';
         slider.min = '1';
         slider.max = '10';
         slider.step = '0.1';
@@ -227,7 +224,7 @@ export class ViewerControls {
         group.appendChild(pointSizeContainer);
         return group;
     }
-
+    
     addStyles() {
         const styleId = 'viewer-controls-styles';
         
@@ -240,24 +237,37 @@ export class ViewerControls {
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
+            /* Base UI Styles */
             .viewer-controls {
                 position: fixed;
                 top: 20px;
                 left: 20px;
                 background: rgba(0, 0, 0, 0.8);
                 padding: 15px;
-                border-radius: 5px;
+                border-radius: 15px;
                 color: white;
                 font-family: Arial, sans-serif;
-                min-width: 250px;
+                min-width: 300px;
                 z-index: 1000;
                 pointer-events: auto;
+
+                /* Spatial/XR Optimizations */
+                transform-style: preserve-3d;
+                transform: translateZ(-1m);
+                font-size: 18px;
+                line-height: 1.5;
+                letter-spacing: 0.5px;
+                backdrop-filter: blur(10px);
             }
             
+            /* Control Groups */
             .control-group {
-                margin-bottom: 15px;
-                padding-bottom: 15px;
+                margin-bottom: 20px;
+                padding: 15px;
+                background: rgba(0, 0, 0, 0.8);
+                border-radius: 15px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                transition: transform 0.2s ease;
             }
             
             .control-group:last-child {
@@ -266,40 +276,47 @@ export class ViewerControls {
                 border-bottom: none;
             }
             
+            /* Labels */
             .control-group label {
                 display: block;
                 margin-bottom: 8px;
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: bold;
                 color: #ddd;
             }
             
+            /* Input Elements */
             .control-group select,
             .control-group input[type="range"] {
                 width: 100%;
-                padding: 5px;
+                padding: 12px;
                 background: #444;
                 border: 1px solid #666;
-                border-radius: 3px;
+                border-radius: 8px;
                 color: white;
                 outline: none;
+                min-height: 44px;
+                margin: 10px 0;
             }
             
+            /* File Button */
             .file-button {
                 display: block;
                 width: 100%;
-                padding: 8px;
+                padding: 12px 20px;
                 background: #4CAF50;
                 border: none;
-                border-radius: 3px;
+                border-radius: 8px;
                 color: white;
                 cursor: pointer;
-                font-size: 14px;
-                transition: background 0.3s;
+                font-size: 16px;
+                transition: all 0.3s ease;
+                min-height: 44px;
             }
             
             .file-button:hover {
                 background: #45a049;
+                transform: scale(1.02);
             }
             
             .file-button:disabled {
@@ -307,19 +324,21 @@ export class ViewerControls {
                 cursor: not-allowed;
             }
             
+            /* Info Text */
             .file-info {
-                margin-top: 8px;
-                font-size: 12px;
+                margin-top: 10px;
+                font-size: 14px;
                 color: #ccc;
             }
             
+            /* Camera Controls Info */
             .camera-controls-info {
-                font-size: 13px;
+                font-size: 14px;
                 line-height: 1.6;
             }
             
             .control-info {
-                margin-bottom: 4px;
+                margin-bottom: 6px;
                 color: #ddd;
             }
             
@@ -327,6 +346,7 @@ export class ViewerControls {
                 color: #4CAF50;
             }
             
+            /* Point Size Container */
             .point-size-container {
                 display: flex;
                 align-items: center;
@@ -340,25 +360,27 @@ export class ViewerControls {
             .point-size-container span {
                 min-width: 30px;
                 text-align: right;
-                font-size: 14px;
+                font-size: 16px;
                 color: #ddd;
             }
             
-            /* Custom range input styling */
+            /* Range Input Styling */
             input[type="range"] {
                 -webkit-appearance: none;
                 margin: 10px 0;
                 background: transparent;
+                touch-action: none;
             }
             
             input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none;
-                height: 16px;
-                width: 16px;
+                height: 30px;
+                width: 30px;
                 border-radius: 50%;
                 background: #4CAF50;
                 cursor: pointer;
-                margin-top: -6px;
+                margin-top: -14px;
+                border: 2px solid rgba(255, 255, 255, 0.3);
             }
             
             input[type="range"]::-webkit-slider-runnable-track {
@@ -368,20 +390,200 @@ export class ViewerControls {
                 border-radius: 2px;
             }
             
+            /* Select Element Styling */
             select {
                 appearance: none;
-                padding: 8px !important;
+                padding: 12px !important;
                 background: #444 url('data:image/svg+xml;utf8,<svg fill="white" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 8px center !important;
                 background-size: 16px !important;
                 cursor: pointer;
+                touch-action: none;
             }
             
             select:focus {
                 border-color: #4CAF50;
             }
+
+            /* XR-specific Interactions */
+            .viewer-controls .control-group:hover,
+            .viewer-controls .control-group.active {
+                transform: scale(1.05);
+            }
+
+            .xr-hover {
+                outline: 2px solid #4CAF50;
+                transform: scale(1.05);
+                box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+            }
+
+            /* Responsive Layout */
+            @media (max-width: 768px) {
+                .viewer-controls {
+                    min-width: 250px;
+                }
+                
+                .control-group {
+                    padding: 12px;
+                }
+                
+                .file-button,
+                .control-group select,
+                .control-group input[type="range"] {
+                    padding: 10px;
+                }
+            }
+
+            /* VR Mode Optimizations */
+            .vr-mode .viewer-controls {
+                transform: translateZ(-0.5m) scale(1.5);
+                opacity: 0.95;
+            }
+
+            .vr-mode .control-group {
+                margin-bottom: 25px;
+            }
+
+            .vr-mode input[type="range"]::-webkit-slider-thumb {
+                height: 40px;
+                width: 40px;
+            }
         `;
+        
         document.head.appendChild(style);
     }
 
+    setupSpatialEvents() {
+        // Handle spatial selection events
+        document.addEventListener('select', (e) => {
+            if (e.target.closest('.viewer-controls')) {
+                // Handle UI interaction in spatial context
+                e.target.click();
+            }
+        });
+
+        // Handle hover states
+        document.addEventListener('beforexrselect', (e) => {
+            const control = e.target.closest('.control-group');
+            if (control) {
+                control.style.transform = 'scale(1.1)';
+            }
+        });
+    }
+
+    setupXRInteractions() {
+        // For Vision Pro gestures
+        window.addEventListener('gesturestart', (e) => this.handleGestureStart(e));
+        window.addEventListener('gesturechange', (e) => this.handleGestureChange(e));
+        window.addEventListener('gestureend', (e) => this.handleGestureEnd(e));
+
+        // For Quest controller interaction
+        this.activeControl = null;
+        this.isDragging = false;
+        this.lastPointerPosition = { x: 0, y: 0 };
+
+        // Add ray intersection detection for Quest controllers
+        document.addEventListener('controller-ray-intersect', (e) => {
+            const { element, controller } = e.detail;
+            if (element.closest('.viewer-controls')) {
+                this.handleControllerIntersection(element, controller);
+            }
+        });
+    }
+
+    handleGestureStart(e) {
+        // Find the control element under the gesture
+        const control = document.elementFromPoint(e.clientX, e.clientY);
+        if (control) {
+            if (control.type === 'range') {
+                // Handle slider interaction
+                this.activeControl = control;
+                this.initialValue = parseFloat(control.value);
+                this.lastX = e.clientX;
+            } else if (control.tagName === 'SELECT') {
+                // Handle view mode selection
+                this.activeControl = control;
+            }
+        }
+    }
+
+    handleGestureChange(e) {
+        if (!this.activeControl) return;
     
+        if (this.activeControl.type === 'range') {
+            // Handle slider movement
+            let delta;
+            if (e.scale) {
+                // Pinch gesture
+                delta = (e.scale - 1.0) * 5.0; // Increased sensitivity
+            } else if (e.clientX) {
+                // Drag gesture
+                delta = (e.clientX - this.lastX) / 100;
+                this.lastX = e.clientX;
+            }
+    
+            if (delta) {
+                const range = this.activeControl.max - this.activeControl.min;
+                const newValue = parseFloat(this.activeControl.value) + (delta * range);
+                
+                // Update slider value
+                this.activeControl.value = Math.min(Math.max(newValue, this.activeControl.min), this.activeControl.max);
+                
+                // Update point size
+                if (this.activeControl.id === 'pointSizeSlider') {
+                    this.renderer.setPointSize(parseFloat(this.activeControl.value));
+                    // Update display value
+                    const valueDisplay = this.activeControl.parentNode.querySelector('span');
+                    if (valueDisplay) {
+                        valueDisplay.textContent = parseFloat(this.activeControl.value).toFixed(1);
+                    }
+                }
+            }
+        } else if (this.activeControl.tagName === 'SELECT') {
+            // Handle view mode selection with rotation gesture
+            const rotationDelta = e.rotation;
+            if (Math.abs(rotationDelta) > 45) { // Threshold for view mode change
+                const currentIndex = this.activeControl.selectedIndex;
+                const newIndex = rotationDelta > 0 ? 
+                    (currentIndex + 1) % this.activeControl.options.length :
+                    (currentIndex - 1 + this.activeControl.options.length) % this.activeControl.options.length;
+                
+                this.activeControl.selectedIndex = newIndex;
+                this.renderer.setViewMode(parseInt(this.activeControl.value));
+            }
+        }
+    }
+
+    handleGestureEnd(e) {
+        this.activeControl = null;
+        this.initialValue = null;
+    }
+
+    // For Quest controller interaction
+    handleControllerIntersection(element, controller) {
+        const prevHover = document.querySelector('.xr-hover');
+        if (prevHover) prevHover.classList.remove('xr-hover');
+        
+        const controlGroup = element.closest('.control-group');
+        if (controlGroup) {
+            controlGroup.classList.add('xr-hover');
+        }
+    
+        if (controller.buttons[0].pressed) { // Trigger button
+            if (element.type === 'range') {
+                // Handle slider
+                const rect = element.getBoundingClientRect();
+                const percentage = (controller.position.x - rect.left) / rect.width;
+                const newValue = element.min + (percentage * (element.max - element.min));
+                element.value = Math.min(Math.max(newValue, element.min), element.max);
+                
+                if (element.id === 'pointSizeSlider') {
+                    this.renderer.setPointSize(parseFloat(element.value));
+                }
+            } else if (element.tagName === 'SELECT') {
+                // Handle view mode selection
+                element.selectedIndex = (element.selectedIndex + 1) % element.options.length;
+                this.renderer.setViewMode(parseInt(element.value));
+            }
+        }
+    }
 }

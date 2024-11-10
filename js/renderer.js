@@ -134,6 +134,6 @@ class Renderer {
 
     startRenderLoop() {
         this.render(0);
-        this.loadPointCloud('models/example.ply');
+        this.loadPointCloud('models/monkey.obj');
     }
 }

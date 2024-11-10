@@ -215,13 +215,6 @@ export class PointCloudRenderer {
         gl.enableVertexAttribArray(this.attributes.color);
         gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
 
-        // Log draw call details
-        console.log('Drawing points:', {
-            vertexCount: this.vertexCount,
-            pointSize: this.pointSize,
-            viewMode: this.viewMode
-        });
-
         // Draw the points
         gl.drawArrays(gl.POINTS, 0, this.vertexCount);
 
