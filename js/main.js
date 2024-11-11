@@ -11,7 +11,6 @@ import { XRControls } from './XRControls.js';
 class App {
     constructor() {
         console.log('Initializing App...');
-        // Store gl-matrix functions
         window.glMatrix = { mat4, vec3 };
         this.mat4 = mat4;
         this.vec3 = vec3;
@@ -32,21 +31,58 @@ class App {
             return;
         }
 
-        this.gl = this.canvas.getContext('webgl', { xrCompatible: true });
+        // Try WebGL 2 first
+        this.gl = this.canvas.getContext('webgl2', { 
+            xrCompatible: true,
+            antialias: true,
+            alpha: false,
+            depth: true,
+            stencil: false
+        });
+        
+        // Fall back to WebGL 1 if WebGL 2 is not available
         if (!this.gl) {
-            console.error('Unable to initialize WebGL. Your browser may not support it.');
+            console.log('WebGL 2 not available, falling back to WebGL 1');
+            this.gl = this.canvas.getContext('webgl', { 
+                xrCompatible: true,
+                antialias: true,
+                alpha: false,
+                depth: true,
+                stencil: false
+            });
+        }
+
+        if (!this.gl) {
+            console.error('WebGL not supported');
             return;
         }
 
+        // Log WebGL version
+        const isWebGL2 = this.gl instanceof WebGL2RenderingContext;
+        console.log(`Using ${isWebGL2 ? 'WebGL 2.0' : 'WebGL 1.0'}`);
+
         this.setupWebGLContext();
         this.resizeCanvas();
-        console.log('WebGL initialized successfully');
     }
 
     setupWebGLContext() {
-        this.gl.enable(this.gl.DEPTH_TEST);
-        this.gl.enable(this.gl.BLEND);
-        this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+        const gl = this.gl;
+        gl.enable(gl.DEPTH_TEST);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        
+        // Additional WebGL 2 features if available
+        if (gl instanceof WebGL2RenderingContext) {
+            gl.enable(gl.PRIMITIVE_RESTART_FIXED_INDEX);
+            
+            // Enable additional features specific to WebGL 2
+            gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+            gl.enable(gl.RASTERIZER_DISCARD);
+            
+            // Set up vertex array object (VAO)
+            this.vao = gl.createVertexArray();
+            gl.bindVertexArray(this.vao);
+        }
     }
 
     initializeComponents() {

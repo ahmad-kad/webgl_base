@@ -106,7 +106,79 @@ export const SHADERS = {
                 gl_FragColor = finalColor;
             }
         `
-    }
+    },
+
+    mesh: {
+        vertex: `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            attribute vec3 aColor;
+            attribute vec2 aTexCoord;
+            
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            uniform mat4 uNormalMatrix;
+            
+            varying vec3 vColor;
+            varying vec3 vNormal;
+            varying vec2 vTexCoord;
+            varying float vDepth;
+            
+            void main() {
+                vec4 mvPosition = uModelViewMatrix * vec4(aPosition, 1.0);
+                gl_Position = uProjectionMatrix * mvPosition;
+                
+                vNormal = normalize((uNormalMatrix * vec4(aNormal, 0.0)).xyz);
+                vColor = aColor;
+                vTexCoord = aTexCoord;
+                vDepth = -mvPosition.z;
+            }
+        `,
+        fragment: `
+            precision highp float;
+            
+            varying vec3 vColor;
+            varying vec3 vNormal;
+            varying vec2 vTexCoord;
+            varying float vDepth;
+            
+            uniform int uViewMode;
+            uniform float uNearPlane;
+            uniform float uFarPlane;
+            uniform bool uWireframe;
+            
+            void main() {
+                vec4 finalColor;
+                
+                if (uViewMode == 0) {
+                    // RGB mode with basic lighting
+                    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+                    float diff = max(dot(vNormal, lightDir), 0.0);
+                    vec3 ambient = vColor * 0.3;
+                    vec3 diffuse = vColor * diff * 0.7;
+                    finalColor = vec4(ambient + diffuse, 1.0);
+                } 
+                else if (uViewMode == 1) {
+                    // Depth mode
+                    float depth = (vDepth - uNearPlane) / (uFarPlane - uNearPlane);
+                    finalColor = vec4(vec3(1.0 - depth), 1.0);
+                } 
+                else if (uViewMode == 2) {
+                    // Normal mode
+                    finalColor = vec4(vNormal * 0.5 + 0.5, 1.0);
+                }
+                else {
+                    finalColor = vec4(vColor, 1.0);
+                }
+                
+                if (uWireframe) {
+                    vec3 wireColor = vec3(0.0, 1.0, 0.0);
+                    finalColor = vec4(wireColor, 1.0);
+                }
+                
+                gl_FragColor = finalColor;
+            }
+        `}
 };
 
 console.log('Shaders module loaded successfully');

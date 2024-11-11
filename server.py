@@ -16,7 +16,7 @@ class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
         }
         super().__init__(*args, **kwargs)
 
-PORT = 8001
+PORT = 8000
 Handler = MyHttpRequestHandler
 
 with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:

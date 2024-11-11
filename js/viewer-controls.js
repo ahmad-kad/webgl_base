@@ -160,30 +160,52 @@ export class ViewerControls {
         const group = document.createElement('div');
         group.className = 'control-group';
         
-        const label = document.createElement('label');
-        label.textContent = 'View Mode';
+        // View mode label and selector
+        const viewModeLabel = document.createElement('label');
+        viewModeLabel.textContent = 'View Mode';
         
-        const select = document.createElement('select');
+        const viewModeSelect = document.createElement('select');
         this.viewModes.forEach(mode => {
             const option = document.createElement('option');
             option.value = mode.value;
             option.textContent = mode.name;
-            select.appendChild(option);
+            viewModeSelect.appendChild(option);
         });
         
-        select.addEventListener('change', (e) => {
-            try {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value)) {
-                    this.renderer.setViewMode(value);
-                }
-            } catch (error) {
-                console.error('Error changing view mode:', error);
+        // Render mode toggle
+        const renderModeLabel = document.createElement('label');
+        renderModeLabel.textContent = 'Render Mode';
+        
+        const renderModeSelect = document.createElement('select');
+        ['Points', 'Mesh', 'Wireframe'].forEach(mode => {
+            const option = document.createElement('option');
+            option.value = mode.toLowerCase();
+            option.textContent = mode;
+            renderModeSelect.appendChild(option);
+        });
+        
+        viewModeSelect.addEventListener('change', (e) => {
+            const value = parseInt(e.target.value);
+            if (!isNaN(value)) {
+                this.renderer.setViewMode(value);
             }
         });
         
-        group.appendChild(label);
-        group.appendChild(select);
+        renderModeSelect.addEventListener('change', (e) => {
+            const mode = e.target.value;
+            this.renderer.setRenderMode(mode);
+            if (mode === 'wireframe') {
+                this.renderer.setWireframe(true);
+                this.renderer.setRenderMode('mesh');
+            } else {
+                this.renderer.setWireframe(false);
+            }
+        });
+        
+        group.appendChild(viewModeLabel);
+        group.appendChild(viewModeSelect);
+        group.appendChild(renderModeLabel);
+        group.appendChild(renderModeSelect);
         return group;
     }
 
