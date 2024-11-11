@@ -5,34 +5,38 @@ import { mat4 } from 'https://cdn.skypack.dev/gl-matrix';
 export class PointCloudRenderer {
     constructor(gl) {
         this.gl = gl;
-        this.isWebGL2 = gl instanceof WebGL2RenderingContext;
-        console.log(`Initializing PointCloudRenderer with ${this.isWebGL2 ? 'WebGL 2' : 'WebGL 1'}`);
+        console.log('Initializing PointCloudRenderer with WebGL 1');
+        
+        // Initialize bounds first
+        this.bounds = {
+            min: { x: Infinity, y: Infinity, z: Infinity },
+            max: { x: -Infinity, y: -Infinity, z: -Infinity }
+        };
+
+        // Initialize ModelLoader
+        this.modelLoader = new ModelLoader();
+        
+        this.initBuffers();
+        const shadersInitialized = this.initShaders();
+        const meshShadersInitialized = this.initMeshShaders();
+        
+        if (!shadersInitialized || !meshShadersInitialized) {
+            console.error('Failed to initialize shaders');
+            return;
+        }
+        
         this.viewMode = 0;
         this.pointSize = 5.0;
         this.vertexCount = 0;
         this.renderMode = 'points';
         this.wireframe = false;
         
-        this.bounds = {
-            min: { x: Infinity, y: Infinity, z: Infinity },
-            max: { x: -Infinity, y: -Infinity, z: -Infinity }
-        };
-        if (this.isWebGL2) {
-            this.vao = gl.createVertexArray();
-            gl.bindVertexArray(this.vao);
-        } else {
-            this.uint32Indices = gl.getExtension('OES_element_index_uint');
-            console.log('32-bit indices ' + (this.uint32Indices ? 'enabled' : 'not available'));
-        }
-
-        this.modelLoader = new ModelLoader();
-        this.initBuffers();
-        this.initShaders();
-        this.initMeshShaders();
-        console.log('PointCloudRenderer initialized successfully');
-
+        // Get WebGL 1 extension for 32-bit indices
+        this.uint32Indices = gl.getExtension('OES_element_index_uint');
+        console.log('32-bit indices ' + (this.uint32Indices ? 'enabled' : 'not available'));
     }
-    
+
+
     initBuffers() {
         this.buffers = {
             position: this.gl.createBuffer(),
@@ -45,65 +49,52 @@ export class PointCloudRenderer {
     }
 
     initShaders() {
-        // Use shaders from shaders.js
-        const vertexShader = this.createShader(this.gl.VERTEX_SHADER, SHADERS.point.vertex);
-        const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, SHADERS.point.fragment);
-        
-        if (!vertexShader || !fragmentShader) {
-            console.error('Failed to create shaders');
-            return;
-        }
-    
-        this.program = this.gl.createProgram();
-        this.gl.attachShader(this.program, vertexShader);
-        this.gl.attachShader(this.program, fragmentShader);
-        this.gl.linkProgram(this.program);
-    
-        if (!this.gl.getProgramParameter(this.program, this.gl.LINK_STATUS)) {
-            const error = this.gl.getProgramInfoLog(this.program);
-            console.error('Failed to link program:', error);
-            // Clean up shaders
-            this.gl.deleteShader(vertexShader);
-            this.gl.deleteShader(fragmentShader);
-            this.gl.deleteProgram(this.program);
-            return;
-        }
+        try {
+            const gl = this.gl;
 
-        // Get attribute locations
-        this.attributes = {
-            position: this.gl.getAttribLocation(this.program, 'aPosition'),
-            normal: this.gl.getAttribLocation(this.program, 'aNormal'),
-            color: this.gl.getAttribLocation(this.program, 'aColor'),
-            curvature: this.gl.getAttribLocation(this.program, 'aCurvature')
-        };
+            // Create shader program for points
+            const vertexShader = this.createShader(gl.VERTEX_SHADER, SHADERS.point.vertex);
+            const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, SHADERS.point.fragment);
 
-        // Get uniform locations
-        this.uniforms = {
-            modelView: this.gl.getUniformLocation(this.program, 'uModelViewMatrix'),
-            projection: this.gl.getUniformLocation(this.program, 'uProjectionMatrix'),
-            pointSize: this.gl.getUniformLocation(this.program, 'uPointSize'),
-            viewMode: this.gl.getUniformLocation(this.program, 'uViewMode'),
-            nearPlane: this.gl.getUniformLocation(this.program, 'uNearPlane'),
-            farPlane: this.gl.getUniformLocation(this.program, 'uFarPlane')
-        };
-
-        // Clean up shaders after linking
-        this.gl.deleteShader(vertexShader);
-        this.gl.deleteShader(fragmentShader);
-
-        // Verify all locations were found
-        Object.entries(this.attributes).forEach(([name, location]) => {
-            if (location === -1) {
-                console.warn(`Attribute '${name}' not found in shader program`);
+            if (!vertexShader || !fragmentShader) {
+                throw new Error('Failed to create shaders');
             }
-        });
 
-        Object.entries(this.uniforms).forEach(([name, location]) => {
-            if (location === null) {
-                console.warn(`Uniform '${name}' not found in shader program`);
+            this.program = gl.createProgram();
+            gl.attachShader(this.program, vertexShader);
+            gl.attachShader(this.program, fragmentShader);
+            gl.linkProgram(this.program);
+
+            if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+                const info = gl.getProgramInfoLog(this.program);
+                throw new Error('Could not link WebGL program. \n\n' + info);
             }
-        });
+
+            // Get attributes
+            this.attributes = {
+                position: gl.getAttribLocation(this.program, 'aPosition'),
+                normal: gl.getAttribLocation(this.program, 'aNormal'),
+                color: gl.getAttribLocation(this.program, 'aColor'),
+                curvature: gl.getAttribLocation(this.program, 'aCurvature')
+            };
+
+            // Get uniforms
+            this.uniforms = {
+                modelView: gl.getUniformLocation(this.program, 'uModelViewMatrix'),
+                projection: gl.getUniformLocation(this.program, 'uProjectionMatrix'),
+                pointSize: gl.getUniformLocation(this.program, 'uPointSize'),
+                viewMode: gl.getUniformLocation(this.program, 'uViewMode'),
+                nearPlane: gl.getUniformLocation(this.program, 'uNearPlane'),
+                farPlane: gl.getUniformLocation(this.program, 'uFarPlane')
+            };
+
+            return true;
+        } catch (error) {
+            console.error('Error initializing shaders:', error);
+            return false;
+        }
     }
+
 
     initMeshShaders() {
         // Initialize mesh shader program similar to point shader program
@@ -275,63 +266,64 @@ export class PointCloudRenderer {
         });
     }
 
-    draw(projectionMatrix, modelViewMatrix){
-        if (this.renderMode === 'points') {
-            this.drawPoints(projectionMatrix, modelViewMatrix);
-        } else {
-            this.drawMesh(projectionMatrix, modelViewMatrix);
+
+    bindAttributes() {
+        const gl = this.gl;
+        
+        // Bind position attribute
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+        gl.enableVertexAttribArray(this.attributes.position);
+        gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
+        
+        // Bind normal attribute
+        if (this.attributes.normal !== -1) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
+            gl.enableVertexAttribArray(this.attributes.normal);
+            gl.vertexAttribPointer(this.attributes.normal, 3, gl.FLOAT, false, 0, 0);
+        }
+        
+        // Bind color attribute
+        if (this.attributes.color !== -1) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
+            gl.enableVertexAttribArray(this.attributes.color);
+            gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
         }
     }
 
     drawPoints(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
 
-        if (!this.program || !this.uniforms || !this.attributes) {
-            console.error('Shader program not properly initialized');
+        if (!this.program || !this.uniforms || !this.attributes || this.vertexCount === 0) {
+            console.error('Cannot draw points: not properly initialized or no data');
             return;
         }
-        if (this.isWebGL2) {
-            gl.bindVertexArray(this.vao);
-        }
 
-        gl.useProgram(this.program);
+        try {
+            gl.useProgram(this.program);
 
-        // Set uniforms
-        gl.uniformMatrix4fv(this.uniforms.projection, false, projectionMatrix);
-        gl.uniformMatrix4fv(this.uniforms.modelView, false, modelViewMatrix);
-        gl.uniform1f(this.uniforms.pointSize, this.pointSize);
-        gl.uniform1i(this.uniforms.viewMode, this.viewMode);
-        gl.uniform1f(this.uniforms.nearPlane, 0.1);
-        gl.uniform1f(this.uniforms.farPlane, 1000.0);
+            // Set uniforms
+            gl.uniformMatrix4fv(this.uniforms.projection, false, projectionMatrix);
+            gl.uniformMatrix4fv(this.uniforms.modelView, false, modelViewMatrix);
+            gl.uniform1f(this.uniforms.pointSize, this.pointSize);
+            gl.uniform1i(this.uniforms.viewMode, this.viewMode);
+            gl.uniform1f(this.uniforms.nearPlane, 0.1);
+            gl.uniform1f(this.uniforms.farPlane, 1000.0);
 
-        // Enable and bind position attribute
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-        gl.enableVertexAttribArray(this.attributes.position);
-        gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
+            // Bind attributes
+            this.bindAttributes();
 
-        // Enable and bind normal attribute
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
-        gl.enableVertexAttribArray(this.attributes.normal);
-        gl.vertexAttribPointer(this.attributes.normal, 3, gl.FLOAT, false, 0, 0);
+            // Draw
+            gl.drawArrays(gl.POINTS, 0, this.vertexCount);
 
-        // Enable and bind color attribute
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
-        gl.enableVertexAttribArray(this.attributes.color);
-        gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
-
-        // Draw the points
-        gl.drawArrays(gl.POINTS, 0, this.vertexCount);
-
-        // Disable vertex attributes
-        gl.disableVertexAttribArray(this.attributes.position);
-        gl.disableVertexAttribArray(this.attributes.normal);
-        gl.disableVertexAttribArray(this.attributes.color);
-
-        if (this.isWebGL2) {
-            gl.bindVertexArray(null);
+            // Cleanup
+            if (this.attributes.position !== -1) gl.disableVertexAttribArray(this.attributes.position);
+            if (this.attributes.normal !== -1) gl.disableVertexAttribArray(this.attributes.normal);
+            if (this.attributes.color !== -1) gl.disableVertexAttribArray(this.attributes.color);
+        } catch (error) {
+            console.error('Error drawing points:', error);
         }
     }
-
+    
     bindMeshAttributes() {
         const gl = this.gl;
         
@@ -341,30 +333,30 @@ export class PointCloudRenderer {
         gl.vertexAttribPointer(this.meshAttributes.position, 3, gl.FLOAT, false, 0, 0);
         
         // Normal attribute
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
-        gl.enableVertexAttribArray(this.meshAttributes.normal);
-        gl.vertexAttribPointer(this.meshAttributes.normal, 3, gl.FLOAT, false, 0, 0);
+        if (this.meshAttributes.normal !== -1) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
+            gl.enableVertexAttribArray(this.meshAttributes.normal);
+            gl.vertexAttribPointer(this.meshAttributes.normal, 3, gl.FLOAT, false, 0, 0);
+        }
         
         // Color attribute
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
-        gl.enableVertexAttribArray(this.meshAttributes.color);
-        gl.vertexAttribPointer(this.meshAttributes.color, 3, gl.FLOAT, false, 0, 0);
+        if (this.meshAttributes.color !== -1) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
+            gl.enableVertexAttribArray(this.meshAttributes.color);
+            gl.vertexAttribPointer(this.meshAttributes.color, 3, gl.FLOAT, false, 0, 0);
+        }
         
         // Texture coordinate attribute
-        if (this.buffers.texCoords) {
+        if (this.meshAttributes.texCoord !== -1 && this.buffers.texCoords) {
             gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoords);
             gl.enableVertexAttribArray(this.meshAttributes.texCoord);
             gl.vertexAttribPointer(this.meshAttributes.texCoord, 2, gl.FLOAT, false, 0, 0);
         }
     }
-    
+
     drawMesh(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
         
-        if (this.isWebGL2) {
-            gl.bindVertexArray(this.vao);
-        }
-
         gl.useProgram(this.meshProgram);
         
         // Calculate normal matrix
@@ -388,8 +380,7 @@ export class PointCloudRenderer {
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.indices);
         
         // Choose index type based on extension support and vertex count
-        const indexType = this.isWebGL2 ? gl.UNSIGNED_INT : 
-        (this.uint32Indices ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT);
+        const indexType = this.uint32Indices ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
         
         if (this.wireframe) {
             // Draw wireframe
@@ -408,9 +399,6 @@ export class PointCloudRenderer {
         if (this.meshAttributes.texCoord !== -1) {
             gl.disableVertexAttribArray(this.meshAttributes.texCoord);
         }
-        if (this.isWebGL2) {
-            gl.bindVertexArray(null);
-        }
     }
 
     async loadPLY(filePath) {
@@ -420,11 +408,16 @@ export class PointCloudRenderer {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const text = await response.text();
-            const data = await this.modelLoader.loadFile(text, 'ply');
+            console.log('Loading PLY file...');
+            const data = await this.modelLoader.loadPLY(text);
+            
+            if (!data || !data.vertices || data.vertices.length === 0) {
+                throw new Error('No valid vertex data found in PLY file');
+            }
+
             this.updateBuffers(data);
             this.calculateBounds(data.vertices);
             this.vertexCount = data.vertices.length / 3;
-            console.log(`Loaded PLY file with ${this.vertexCount} points`);
 
             // Emit modelLoaded event
             window.dispatchEvent(new CustomEvent('modelLoaded', {
@@ -434,6 +427,8 @@ export class PointCloudRenderer {
                     bounds: this.bounds
                 }
             }));
+
+            return true;
         } catch (error) {
             console.error('Error loading PLY:', error);
             throw error;
@@ -488,35 +483,12 @@ export class PointCloudRenderer {
                 throw new Error('No vertex data found in model');
             }
 
-            // Ensure data is in the correct format
-            const processedData = {
-                vertices: data.vertices instanceof Float32Array ? 
-                    data.vertices : new Float32Array(data.vertices),
-                normals: data.normals instanceof Float32Array ? 
-                    data.normals : new Float32Array(data.normals || []),
-                colors: data.colors instanceof Float32Array ? 
-                    data.colors : new Float32Array(data.colors || []),
-                faces: data.faces instanceof Uint32Array || data.faces instanceof Uint16Array ?
-                    data.faces : new Uint32Array(data.faces || []),
-                textureCoords: data.textureCoords instanceof Float32Array ?
-                    data.textureCoords : new Float32Array(data.textureCoords || []),
-                vertexCount: data.vertices.length / 3
-            };
-
             // Update buffers and calculate bounds
-            this.updateBuffers(processedData);
-            this.calculateBounds(processedData.vertices);
+            this.updateBuffers(data);
+            this.calculateBounds(data.vertices);
 
             console.log(`Loaded ${fileType.toUpperCase()} model with ${this.vertexCount} vertices`);
-            console.log('Model bounds:', this.bounds);
             
-            // Log buffer status
-            console.log('Buffer status:', {
-                hasIndices: processedData.faces.length > 0,
-                indexCount: processedData.faces.length,
-                vertexCount: this.vertexCount
-            });
-
             // Emit modelLoaded event
             window.dispatchEvent(new CustomEvent('modelLoaded', {
                 detail: {
@@ -528,8 +500,16 @@ export class PointCloudRenderer {
 
             return true;
         } catch (error) {
-            console.error(`Error loading ${fileType.toUpperCase()} file:`, error);
+            console.error('Error processing file:', error);
             throw error;
+        }
+    }
+
+    draw(projectionMatrix, modelViewMatrix) {
+        if (this.renderMode === 'points') {
+            this.drawPoints(projectionMatrix, modelViewMatrix);
+        } else {
+            this.drawMesh(projectionMatrix, modelViewMatrix);
         }
     }
 
@@ -574,16 +554,28 @@ export class PointCloudRenderer {
     }
 
     calculateBounds(vertices) {
-        this.bounds.min.x = this.bounds.min.y = this.bounds.min.z = Infinity;
-        this.bounds.max.x = this.bounds.max.y = this.bounds.max.z = -Infinity;
+        // Reset bounds
+        this.bounds = {
+            min: { x: Infinity, y: Infinity, z: Infinity },
+            max: { x: -Infinity, y: -Infinity, z: -Infinity }
+        };
 
         for (let i = 0; i < vertices.length; i += 3) {
-            this.bounds.min.x = Math.min(this.bounds.min.x, vertices[i]);
-            this.bounds.min.y = Math.min(this.bounds.min.y, vertices[i + 1]);
-            this.bounds.min.z = Math.min(this.bounds.min.z, vertices[i + 2]);
-            this.bounds.max.x = Math.max(this.bounds.max.x, vertices[i]);
-            this.bounds.max.y = Math.max(this.bounds.max.y, vertices[i + 1]);
-            this.bounds.max.z = Math.max(this.bounds.max.z, vertices[i + 2]);
+            const x = vertices[i];
+            const y = vertices[i + 1];
+            const z = vertices[i + 2];
+
+            // Update minimum bounds
+            this.bounds.min.x = Math.min(this.bounds.min.x, x);
+            this.bounds.min.y = Math.min(this.bounds.min.y, y);
+            this.bounds.min.z = Math.min(this.bounds.min.z, z);
+
+            // Update maximum bounds
+            this.bounds.max.x = Math.max(this.bounds.max.x, x);
+            this.bounds.max.y = Math.max(this.bounds.max.y, y);
+            this.bounds.max.z = Math.max(this.bounds.max.z, z);
         }
+
+        console.log('Calculated bounds:', this.bounds);
     }
 }
