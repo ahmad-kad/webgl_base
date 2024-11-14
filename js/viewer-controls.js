@@ -125,7 +125,7 @@ export class ViewerControls {
                 button.disabled = false;
             }
         });
-        
+
         group.appendChild(label);
         group.appendChild(button);
         group.appendChild(fileInfo);
@@ -133,6 +133,7 @@ export class ViewerControls {
         
         return group;
     }
+
     createCameraInfo() {
         const group = document.createElement('div');
         group.className = 'control-group camera-info';
@@ -144,22 +145,58 @@ export class ViewerControls {
         controls.className = 'camera-controls-info';
         controls.innerHTML = `
             <div class="control-info">
-                <strong>Orbit:</strong> Left Mouse Button
+                <strong>Movement:</strong> WASD Keys
             </div>
             <div class="control-info">
-                <strong>Pan:</strong> Middle Mouse Button or Alt + Left Mouse
+                <strong>Up/Down:</strong> Q/E Keys
             </div>
             <div class="control-info">
-                <strong>Zoom:</strong> Mouse Wheel or Right Mouse Button
+                <strong>Look Around:</strong> IJKL Keys
+                <div class="sub-info">
+                    I: Look Up | K: Look Down
+                    J: Look Left | L: Look Right
+                </div>
             </div>
             <div class="control-info">
-                <strong>Reset:</strong> Double Click
+                <strong>Point Select:</strong> Left Mouse Click
+            </div>
+            <div class="control-info">
+                <strong>Reset Camera:</strong> F Key or Double Click
             </div>
         `;
         
+        // Add additional styles for the sub-info
+        const style = document.createElement('style');
+        style.textContent = `
+            .sub-info {
+                margin-left: 15px;
+                font-size: 0.9em;
+                color: #aaa;
+            }
+            
+            .control-info {
+                margin-bottom: 8px;
+            }
+            
+            .control-info:last-child {
+                margin-bottom: 0;
+            }
+            
+            .control-info strong {
+                color: #4CAF50;
+            }
+            
+            .camera-controls-info {
+                line-height: 1.6;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 8px;
+            }
+        `;
+        document.head.appendChild(style);
+        
         group.appendChild(label);
         group.appendChild(controls);
-        
         return group;
     }
 
