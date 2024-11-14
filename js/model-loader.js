@@ -1,14 +1,21 @@
+const createTypedArrayFromArray = (arr, Type) => {
+    if (arr instanceof Type) return arr;
+    return new Type(arr);
+};
+
+
 export class ModelLoader {
     constructor() {
         this.supportedFormats = ['ply', 'obj', 'fbx'];
         this.plyLoader = new PLYLoader();
     }
+    
 
     async loadFile(fileData, fileType) {
         console.log(`Loading ${fileType?.toUpperCase()} file...`);
         
         try {
-            // Convert URL/path to appropriate format
+            let processedData = fileData;
             if (typeof fileData === 'string' && (fileData.startsWith('http') || fileData.startsWith('/'))) {
                 const response = await fetch(fileData);
                 if (!response.ok) {
@@ -18,20 +25,29 @@ export class ModelLoader {
                 if (fileType?.toLowerCase() === 'ply') {
                     const headerText = await response.clone().text();
                     const isBinary = this.isPlyBinary(headerText);
-                    fileData = isBinary ? await response.arrayBuffer() : await response.text();
+                    processedData = isBinary ? await response.arrayBuffer() : await response.text();
                 } else {
-                    fileData = await response.text();
+                    processedData = await response.text();
                 }
             }
-
+    
             // Parse based on file type
             switch (fileType?.toLowerCase()) {
-                case 'ply':
-                    return await this.plyLoader.loadPLY(fileData);
-                case 'obj':
-                    return await this.parseOBJ(fileData);
-                case 'fbx':
-                    return this.parseFBX(fileData);
+                case 'ply': {
+                    if (!this.plyLoader) this.plyLoader = new PLYLoader();
+                    return await this.plyLoader.loadPLY(processedData);
+                }
+                case 'obj': {
+                    const parsed = await this.parseOBJ(processedData);
+                    return {
+                        vertices: createTypedArrayFromArray(parsed.vertices, Float32Array),
+                        normals: createTypedArrayFromArray(parsed.normals, Float32Array),
+                        textureCoords: createTypedArrayFromArray(parsed.textureCoords, Float32Array),
+                        faces: createTypedArrayFromArray(parsed.faces, Uint32Array),
+                        colors: createTypedArrayFromArray(parsed.colors, Float32Array),
+                        vertexCount: parsed.vertices.length / 3
+                    };
+                }
                 default:
                     throw new Error(`Unsupported file format: ${fileType}`);
             }
@@ -261,9 +277,9 @@ export class ModelLoader {
     }
 }
 
-
 class PLYLoader {
     constructor() {
+        // Standard property mappings
         this.propertyTypes = new Map([
             ['char', Int8Array],
             ['uchar', Uint8Array],
@@ -281,415 +297,229 @@ class PLYLoader {
             ['int', 4], ['uint', 4],
             ['float', 4], ['double', 8]
         ]);
+
+        // Constants for parsing INRIA formats
+        this.SH_C0 = 0.28209479177387814;
+        this.sphericalHarmonicsSupported = true;
+
+        // Field mappings for different formats
+        this.inriaV1Fields = {
+            base: ['scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3',
+                  'x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity'],
+            sh: Array.from({ length: 45 }, (_, i) => `f_rest_${i}`)
+        };
+
+        this.inriaV2Fields = {
+            codebook: ['features_dc', 'features_rest_0', 'features_rest_1', 'features_rest_2',
+                      'opacity', 'scaling', 'rotation_re', 'rotation_im'],
+            vertex: ['scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3',
+                    'x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity']
+        };
     }
 
     async loadPLY(fileData) {
-        let buffer;
-        if (fileData instanceof ArrayBuffer) {
-            buffer = fileData;
-        } else if (typeof fileData === 'string') {
-            // Check if it's ASCII or binary format
-            const isBinary = fileData.includes('format binary');
-            if (isBinary) {
-                const encoder = new TextEncoder();
-                buffer = encoder.encode(fileData).buffer;
+        try {
+            console.log('Starting PLY load process');
+            console.log('File data type:', typeof fileData);
+            if (fileData instanceof ArrayBuffer) {
+                console.log('File is ArrayBuffer, size:', fileData.byteLength);
             } else {
-                buffer = new TextEncoder().encode(fileData).buffer;
+                console.log('First 100 chars of file:', fileData.substring(0, 100));
             }
-        } else {
-            throw new Error('Invalid PLY data format');
+    
+            const header = await this.parsePLYHeader(fileData);
+            console.log('Parsed PLY header:', header);
+    
+            const result = {
+                vertices: [],
+                normals: [],
+                colors: [],
+                faces: [],
+                vertexCount: 0
+            };
+    
+            if (header.format.includes('ascii')) {
+                console.log('Parsing ASCII PLY data');
+                await this.parseASCIIData(header, fileData, result);
+            } else {
+                console.log('Parsing binary PLY data');
+                const dataView = fileData instanceof ArrayBuffer ? 
+                    new DataView(fileData) : 
+                    new DataView(new TextEncoder().encode(fileData).buffer);
+                await this.parseBinaryData(header, dataView, result);
+            }
+    
+            console.log('Parsed PLY data:', {
+                vertexCount: result.vertices.length / 3,
+                normalCount: result.normals.length / 3,
+                colorCount: result.colors.length / 3,
+                faceCount: result.faces.length / 3
+            });
+    
+            if (result.vertices.length === 0) {
+                throw new Error('No vertices found in PLY file');
+            }
+    
+            return {
+                vertices: new Float32Array(result.vertices),
+                normals: result.normals.length > 0 ? new Float32Array(result.normals) : null,
+                colors: result.colors.length > 0 ? new Float32Array(result.colors) : null,
+                faces: result.faces.length > 0 ? new Uint32Array(result.faces) : null,
+                vertexCount: result.vertices.length / 3
+            };
+        } catch (error) {
+            console.error('Error in PLY loading:', error);
+            console.error('Stack trace:', error.stack);
+            throw error;
+        }
+    }
+
+    async parseInriaV1(fileData) {
+        const header = await this.parsePLYHeader(fileData);
+        const result = {
+            vertices: [],
+            normals: [],
+            colors: [],
+            sphericalHarmonics: [],
+            vertexCount: 0
+        };
+
+        // INRIA V1 specific parsing
+        const vertexData = this.getVertexData(fileData, header);
+        
+        for (let i = 0; i < header.numVertices; i++) {
+            const vertex = this.readInriaV1Vertex(vertexData, i, header);
+            
+            // Add position
+            result.vertices.push(vertex.x, vertex.y, vertex.z);
+            
+            // Add colors
+            result.colors.push(
+                this.normalizeColor(vertex.f_dc_0),
+                this.normalizeColor(vertex.f_dc_1),
+                this.normalizeColor(vertex.f_dc_2)
+            );
+
+            // Add spherical harmonics if present
+            if (vertex.sh) {
+                result.sphericalHarmonics.push(...vertex.sh);
+            }
         }
 
-        const dataView = new DataView(buffer);
-        const header = this.parsePLYHeader(dataView);
-        console.log('PLY Header:', header);
+        result.vertexCount = header.numVertices;
+        return this.convertToStandardFormat(result);
+    }
 
+    async parseInriaV2(fileData) {
+        const header = await this.parsePLYHeader(fileData);
+        const result = {
+            vertices: [],
+            colors: [],
+            sphericalHarmonics: [],
+            codebook: this.parseInriaV2Codebook(fileData, header),
+            vertexCount: 0
+        };
+
+        const vertexData = this.getVertexData(fileData, header);
+        
+        for (let i = 0; i < header.numVertices; i++) {
+            const vertex = this.readInriaV2Vertex(vertexData, i, header, result.codebook);
+            
+            // Add decoded data
+            result.vertices.push(vertex.x, vertex.y, vertex.z);
+            result.colors.push(...vertex.colors);
+            if (vertex.sh) {
+                result.sphericalHarmonics.push(...vertex.sh);
+            }
+        }
+
+        result.vertexCount = header.numVertices;
+        return this.convertToStandardFormat(result);
+    }
+
+    async parsePlayCanvas(fileData) {
+        const header = await this.parsePLYHeader(fileData);
+        const result = {
+            vertices: [],
+            colors: [],
+            vertexCount: 0
+        };
+
+        // PlayCanvas specific decompression
+        const chunks = this.parsePlayCanvasChunks(fileData, header);
+        
+        for (let i = 0; i < header.numVertices; i++) {
+            const vertex = this.decompressPlayCanvasVertex(chunks, i);
+            result.vertices.push(vertex.x, vertex.y, vertex.z);
+            result.colors.push(...vertex.colors);
+        }
+
+        result.vertexCount = header.numVertices;
+        return this.convertToStandardFormat(result);
+    }
+
+    // Helper methods for vertex reading and data conversion
+    readInriaV1Vertex(data, index, header) {
+        // Read vertex data based on header format
+        const vertex = {};
+        let offset = index * header.vertexSize;
+
+        for (const field of this.inriaV1Fields.base) {
+            vertex[field] = this.readProperty(data, offset, header.properties[field]);
+            offset += this.propertySizes.get(header.properties[field].type);
+        }
+
+        // Process spherical harmonics if present
+        if (header.hasSphericalHarmonics) {
+            vertex.sh = [];
+            for (const field of this.inriaV1Fields.sh) {
+                if (header.properties[field]) {
+                    vertex.sh.push(this.readProperty(data, offset, header.properties[field]));
+                    offset += this.propertySizes.get(header.properties[field].type);
+                }
+            }
+        }
+
+        return vertex;
+    }
+
+    normalizeColor(color) {
+        return color > 1.0 ? color / 255.0 : color;
+    }
+
+    convertToStandardFormat(specializedData) {
+        return {
+            vertices: new Float32Array(specializedData.vertices),
+            normals: specializedData.normals?.length ? new Float32Array(specializedData.normals) : null,
+            colors: specializedData.colors?.length ? new Float32Array(specializedData.colors) : null,
+            vertexCount: specializedData.vertexCount,
+            additionalData: {
+                sphericalHarmonics: specializedData.sphericalHarmonics?.length ? 
+                    new Float32Array(specializedData.sphericalHarmonics) : null
+            }
+        };
+    }
+
+    async parseStandardPLY(fileData) {
+        const header = await this.parsePLYHeader(fileData);
         const result = {
             vertices: [],
             normals: [],
             colors: [],
             faces: [],
-            vertexCount: header.numVertices
+            vertexCount: 0
         };
 
-        try {
-            if (header.format === 'ascii') {
-                await this.parseASCIIData(header, buffer, result);
-            } else {
-                await this.parseBinaryData(header, dataView, result);
-            }
-        } catch (error) {
-            console.error('Error parsing PLY data:', error);
-            throw error;
+        if (header.format.includes('ascii')) {
+            await this.parseASCIIData(header, fileData, result);
+        } else {
+            // For binary data, create a DataView if we don't already have one
+            const dataView = fileData instanceof ArrayBuffer ? 
+                new DataView(fileData) : 
+                new DataView(new TextEncoder().encode(fileData).buffer);
+            await this.parseBinaryData(header, dataView, result);
         }
 
-        return this.convertToTypedArrays(result);
-    }
-
-    parsePLYHeader(dataView) {
-            const decoder = new TextDecoder();
-            let offset = 0;
-            const header = {
-                format: '',
-                version: '',
-                numVertices: 0,
-                numFaces: 0,
-                vertexProperties: [],
-                faceProperties: [],
-                startOffset: 0,
-                littleEndian: true,
-                comments: []
-            };
-
-            // Read header line by line
-            while (offset < dataView.byteLength) {
-                let line = '';
-                while (offset < dataView.byteLength) {
-                    const byte = dataView.getUint8(offset++);
-                    if (byte === 10) break; // newline
-                    line += String.fromCharCode(byte);
-                }
-
-                line = line.trim();
-                if (line === 'end_header') {
-                    header.startOffset = offset;
-                    break;
-                }
-
-                if (line === '' || line.startsWith('comment')) {
-                    header.comments.push(line);
-                    continue;
-                }
-
-                const parts = line.split(/\s+/);
-                
-                switch(parts[0]) {
-                    case 'format':
-                        header.format = parts[1];
-                        header.version = parts[2];
-                        header.littleEndian = parts[1].includes('little_endian');
-                        break;
-
-                    case 'element':
-                        if (parts[1] === 'vertex') {
-                            header.numVertices = parseInt(parts[2]);
-                        } else if (parts[1] === 'face') {
-                            header.numFaces = parseInt(parts[2]);
-                        }
-                        break;
-
-                    case 'property':
-                        if (parts[1] === 'list') {
-                            header.faceProperties.push({
-                                name: parts[4],
-                                countType: parts[2],
-                                valueType: parts[3],
-                                isList: true
-                            });
-                        } else {
-                            const property = {
-                                name: parts[2],
-                                type: parts[1],
-                                offset: this.propertySizes.get(parts[1]) || 4
-                            };
-                            header.vertexProperties.push(property);
-                        }
-                        break;
-                }
-            }
-
-            // Validate header
-            if (!header.format) {
-                throw new Error('PLY file format not specified in header');
-            }
-
-            if (header.numVertices <= 0) {
-                throw new Error('Invalid number of vertices specified in PLY header');
-            }
-
-            const hasPosition = header.vertexProperties.some(p => ['x', 'y', 'z'].includes(p.name));
-            if (!hasPosition) {
-        throw new Error('PLY file missing vertex position properties');
-        }
-
-        return header;
-    }
-
-    async parseASCIIData(header, buffer, result) {
-        const text = new TextDecoder().decode(buffer);
-        const lines = text.split('\n');
-        let currentLine = 0;
-
-        // Skip header
-        while (currentLine < lines.length) {
-            const line = lines[currentLine].trim();
-            if (line === 'end_header') break;
-            currentLine++;
-        }
-        currentLine++; // Skip 'end_header' line
-
-        // Skip empty lines and comments
-        const isSkippableLine = (line) => {
-            const trimmed = line.trim();
-            return trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith('comment');
-        };
-
-        // Read vertices
-        for (let i = 0; i < header.numVertices; i++) {
-            while (currentLine < lines.length && isSkippableLine(lines[currentLine])) {
-                currentLine++;
-            }
-            
-            if (currentLine >= lines.length) {
-                throw new Error('Unexpected end of file while reading vertices');
-            }
-            
-            const values = lines[currentLine++].trim().split(/\s+/).map(Number);
-            let valueIndex = 0;
-
-            for (const prop of header.vertexProperties) {
-                const value = values[valueIndex++];
-                
-                if (Number.isNaN(value)) {
-                    console.warn(`Invalid value for property ${prop.name} at vertex ${i}`);
-                    continue;
-                }
-
-                switch(prop.name) {
-                    case 'x':
-                    case 'y':
-                    case 'z':
-                        result.vertices.push(value);
-                        break;
-                    case 'nx':
-                    case 'ny':
-                    case 'nz':
-                        result.normals.push(value);
-                        break;
-                    case 'red':
-                    case 'green':
-                    case 'blue':
-                        result.colors.push(value / 255);
-                        break;
-                }
-            }
-        }
-
-
-        // Read faces
-        for (let i = 0; i < header.numFaces; i++) {
-            while (currentLine < lines.length && isSkippableLine(lines[currentLine])) {
-                currentLine++;
-            }
-            
-            if (currentLine >= lines.length) {
-                throw new Error('Unexpected end of file while reading faces');
-            }
-
-            const values = lines[currentLine++].trim().split(/\s+/).map(Number);
-            const numVertices = values[0];
-            
-            if (numVertices < 3) {
-                console.warn(`Skipping invalid face with ${numVertices} vertices`);
-                continue;
-            }
-            
-            // Triangulate face if necessary
-            if (numVertices === 3) {
-                const v1 = values[1] < 0 ? header.numVertices + values[1] : values[1];
-                const v2 = values[2] < 0 ? header.numVertices + values[2] : values[2];
-                const v3 = values[3] < 0 ? header.numVertices + values[3] : values[3];
-                
-                if (this.isValidFaceIndices([v1, v2, v3], header.numVertices)) {
-                    result.faces.push(v1, v2, v3);
-                }
-            } else {
-                // Fan triangulation for convex polygons
-                for (let j = 2; j < numVertices; j++) {
-                    const v1 = values[1] < 0 ? header.numVertices + values[1] : values[1];
-                    const v2 = values[j] < 0 ? header.numVertices + values[j] : values[j];
-                    const v3 = values[j + 1] < 0 ? header.numVertices + values[j + 1] : values[j + 1];
-                    
-                    if (this.isValidFaceIndices([v1, v2, v3], header.numVertices)) {
-                        result.faces.push(v1, v2, v3);
-                    }
-                }
-            }
-        }
-    }
-
-    async parseBinaryData(header, dataView, result) {
-        let offset = header.startOffset;
-        const littleEndian = header.littleEndian;
-        const dataLength = dataView.byteLength;
-    
-        // Helper function to check if we have enough bytes left
-        const hasEnoughBytes = (needed) => (offset + needed) <= dataLength;
-    
-        // Read vertices
-        for (let i = 0; i < header.numVertices; i++) {
-            let vertexOffset = {};
-    
-            // Calculate total bytes needed for this vertex
-            const bytesNeeded = header.vertexProperties.reduce((sum, prop) => 
-                sum + this.propertySizes.get(prop.type), 0);
-    
-            if (!hasEnoughBytes(bytesNeeded)) {
-                console.error(`Buffer overflow reading vertex ${i}: needed ${bytesNeeded} bytes, had ${dataLength - offset}`);
-                break;
-            }
-    
-            for (const prop of header.vertexProperties) {
-                try {
-                    const propSize = this.propertySizes.get(prop.type);
-                    if (!hasEnoughBytes(propSize)) {
-                        throw new Error(`Buffer overflow reading property ${prop.name}`);
-                    }
-    
-                    const value = this.readPropertyValue(dataView, offset, prop.type, littleEndian);
-                    offset += propSize;
-    
-                    if (value !== null) {
-                        vertexOffset[prop.name] = value;
-                    }
-                } catch (error) {
-                    console.warn(`Skipping property ${prop.name} for vertex ${i}:`, error);
-                    offset += this.propertySizes.get(prop.type);
-                    continue;
-                }
-            }
-    
-            // Add properties in correct order
-            if ('x' in vertexOffset && 'y' in vertexOffset && 'z' in vertexOffset) {
-                result.vertices.push(vertexOffset.x, vertexOffset.y, vertexOffset.z);
-    
-                // Only add normals if we have all components
-                if ('nx' in vertexOffset && 'ny' in vertexOffset && 'nz' in vertexOffset) {
-                    result.normals.push(vertexOffset.nx, vertexOffset.ny, vertexOffset.nz);
-                }
-    
-                // Only add colors if we have all components
-                if ('red' in vertexOffset && 'green' in vertexOffset && 'blue' in vertexOffset) {
-                    result.colors.push(
-                        vertexOffset.red / 255,
-                        vertexOffset.green / 255,
-                        vertexOffset.blue / 255
-                    );
-                }
-            }
-        }
-    
-        // Read faces
-        for (let i = 0; i < header.numFaces; i++) {
-            try {
-                // Check if we have enough bytes for the count
-                const countSize = this.propertySizes.get(header.faceProperties[0].countType);
-                if (!hasEnoughBytes(countSize)) {
-                    console.error(`Buffer overflow reading face count at face ${i}`);
-                    break;
-                }
-    
-                const numVertices = this.readPropertyValue(
-                    dataView, 
-                    offset, 
-                    header.faceProperties[0].countType, 
-                    littleEndian
-                );
-                offset += countSize;
-    
-                // Validate number of vertices
-                if (numVertices < 3 || numVertices > 1000) { // Add reasonable max limit
-                    console.warn(`Invalid vertex count ${numVertices} for face ${i}`);
-                    continue;
-                }
-    
-                // Check if we have enough bytes for all indices
-                const valueSize = this.propertySizes.get(header.faceProperties[0].valueType);
-                const indicesSize = numVertices * valueSize;
-                if (!hasEnoughBytes(indicesSize)) {
-                    console.error(`Buffer overflow reading face indices at face ${i}`);
-                    break;
-                }
-    
-                const indices = [];
-                for (let j = 0; j < numVertices; j++) {
-                    const index = this.readPropertyValue(
-                        dataView,
-                        offset,
-                        header.faceProperties[0].valueType,
-                        littleEndian
-                    );
-                    
-                    // Validate index
-                    if (index !== null && index >= 0 && index < header.numVertices) {
-                        indices.push(index);
-                    }
-                    offset += valueSize;
-                }
-    
-                // Only process face if we got all valid indices
-                if (indices.length === numVertices && indices.length >= 3) {
-                    if (indices.length === 3) {
-                        result.faces.push(indices[0], indices[1], indices[2]);
-                    } else {
-                        // Fan triangulation
-                        for (let j = 1; j < indices.length - 1; j++) {
-                            result.faces.push(indices[0], indices[j], indices[j + 1]);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error(`Error reading face ${i}:`, error);
-                break;
-            }
-        }
-    
-        if (result.vertices.length === 0) {
-            throw new Error('No valid vertices found in PLY file');
-        }
-    
-        return result;
-    }
-    
-    readPropertyValue(dataView, offset, type, littleEndian) {
-        try {
-            if (offset < 0 || offset >= dataView.byteLength) {
-                console.warn(`Invalid offset ${offset} for data view of length ${dataView.byteLength}`);
-                return null;
-            }
-    
-            const value = this._readValue(dataView, offset, type, littleEndian);
-            if (!Number.isFinite(value)) {
-                console.warn(`Invalid ${type} value at offset ${offset}`);
-                return null;
-            }
-            return value;
-        } catch (error) {
-            console.warn(`Error reading property value at offset ${offset}:`, error);
-            return null;
-        }
-    }    
-
-    _readValue(dataView, offset, type, littleEndian) {
-        switch (type) {
-            case 'char': return dataView.getInt8(offset);
-            case 'uchar': return dataView.getUint8(offset);
-            case 'short': return dataView.getInt16(offset, littleEndian);
-            case 'ushort': return dataView.getUint16(offset, littleEndian);
-            case 'int': return dataView.getInt32(offset, littleEndian);
-            case 'uint': return dataView.getUint32(offset, littleEndian);
-            case 'float': return dataView.getFloat32(offset, littleEndian);
-            case 'double': return dataView.getFloat64(offset, littleEndian);
-            default: throw new Error(`Unsupported property type: ${type}`);
-        }
-    }
-
-    isValidFaceIndices(indices, numVertices) {
-        return indices.every(index => 
-            Number.isInteger(index) && index >= 0 && index < numVertices);
-    }
-
-    convertToTypedArrays(result) {
         return {
             vertices: new Float32Array(result.vertices),
             normals: result.normals.length > 0 ? new Float32Array(result.normals) : null,
@@ -698,4 +528,362 @@ class PLYLoader {
             vertexCount: result.vertices.length / 3
         };
     }
+
+    async parseASCIIData(header, data, result) {
+        const lines = data.split('\n');
+        let currentLine = 0;
+
+        // Skip header
+        while (currentLine < lines.length && !lines[currentLine].includes('end_header')) {
+            currentLine++;
+        }
+        currentLine++; // Skip 'end_header' line
+
+        // Read vertices
+        for (let i = 0; i < header.numVertices; i++) {
+            const values = lines[currentLine++].trim().split(/\s+/).map(Number);
+            let valueIndex = 0;
+
+            // Process each property
+            for (const [propName, prop] of Object.entries(header.properties)) {
+                if (propName === 'x') result.vertices.push(values[valueIndex]);
+                if (propName === 'y') result.vertices.push(values[valueIndex]);
+                if (propName === 'z') result.vertices.push(values[valueIndex]);
+                
+                if (propName === 'nx') result.normals.push(values[valueIndex]);
+                if (propName === 'ny') result.normals.push(values[valueIndex]);
+                if (propName === 'nz') result.normals.push(values[valueIndex]);
+                
+                if (propName === 'red') result.colors.push(values[valueIndex] / 255);
+                if (propName === 'green') result.colors.push(values[valueIndex] / 255);
+                if (propName === 'blue') result.colors.push(values[valueIndex] / 255);
+                
+                valueIndex++;
+            }
+        }
+
+        // Read faces
+        for (let i = 0; i < header.numFaces; i++) {
+            const values = lines[currentLine++].trim().split(/\s+/).map(Number);
+            const vertexCount = values[0];
+            
+            // Triangulate faces if necessary
+            if (vertexCount === 3) {
+                result.faces.push(values[1], values[2], values[3]);
+            } else {
+                // Fan triangulation for convex polygons
+                for (let j = 2; j < vertexCount; j++) {
+                    result.faces.push(values[1], values[j], values[j + 1]);
+                }
+            }
+        }
     }
+
+    isValidResult(result) {
+        return result && 
+               result.vertices && 
+               result.vertices.length > 0 && 
+               result.vertexCount > 0;
+    }
+
+    async detectPLYFormat(fileData) {
+        let headerText;
+        if (fileData instanceof ArrayBuffer) {
+            const decoder = new TextDecoder();
+            headerText = decoder.decode(new Uint8Array(fileData, 0, 1024));
+        } else if (typeof fileData === 'string') {
+            headerText = fileData.substring(0, 1024);
+        }
+
+        // Format detection logic
+        if (headerText.includes('element codebook_centers')) {
+            return 'inriav2';
+        } else if (headerText.includes('element chunk') || 
+                headerText.match(/[A-Za-z]*packed_[A-Za-z]*/)) {
+            return 'playcanvas';
+        } else if (headerText.includes('f_dc_') || 
+                headerText.includes('f_rest_') || 
+                headerText.includes('scale_0')) {
+            return 'inriav1';
+        }
+        
+        return 'standard';
+    }
+
+    getVertexData(fileData, header) {
+        if (fileData instanceof ArrayBuffer) {
+            return new DataView(fileData, header.headerLength);
+        } else {
+            const encoder = new TextEncoder();
+            const buffer = encoder.encode(fileData.slice(header.headerLength)).buffer;
+            return new DataView(buffer);
+        }
+    }
+
+    async parsePLYHeader(fileData) {
+        try {
+            let headerText;
+            const header = {
+                format: '',
+                version: '',
+                numVertices: 0,
+                numFaces: 0,
+                properties: {},
+                vertexSize: 0,
+                headerLength: 0,
+                isBinary: false
+            };
+    
+            if (fileData instanceof ArrayBuffer) {
+                const decoder = new TextDecoder();
+                let offset = 0;
+                let headerString = '';
+                const dataView = new DataView(fileData);
+                
+                while (offset < fileData.byteLength) {
+                    const byte = dataView.getUint8(offset++);
+                    headerString += String.fromCharCode(byte);
+                    if (headerString.includes('end_header\n')) {
+                        header.headerLength = offset;
+                        headerText = headerString;
+                        break;
+                    }
+                }
+            } else {
+                const endHeaderIndex = fileData.indexOf('end_header\n');
+                headerText = fileData.substring(0, endHeaderIndex + 11);
+                header.headerLength = headerText.length;
+            }
+    
+            const lines = headerText.split('\n');
+            let currentElement = null;
+    
+            for (const line of lines) {
+                const tokens = line.trim().split(/\s+/);
+                if (!tokens[0]) continue;
+    
+                switch (tokens[0]) {
+                    case 'format':
+                        header.format = tokens[1];
+                        header.version = tokens[2];
+                        header.isBinary = tokens[1].includes('binary');
+                        break;
+    
+                    case 'element':
+                        currentElement = tokens[1];
+                        if (currentElement === 'vertex') {
+                            header.numVertices = parseInt(tokens[2]);
+                        } else if (currentElement === 'face') {
+                            header.numFaces = parseInt(tokens[2]);
+                        }
+                        break;
+    
+                    case 'property':
+                        if (!currentElement) continue;
+                        
+                        if (tokens[1] === 'list') {
+                            header.properties[tokens[4]] = {
+                                type: tokens[3],
+                                countType: tokens[2],
+                                isList: true
+                            };
+                        } else {
+                            header.properties[tokens[2]] = {
+                                type: tokens[1],
+                                offset: header.vertexSize
+                            };
+                            header.vertexSize += this.propertySizes.get(tokens[1]) || 0;
+                        }
+                        break;
+                }
+            }
+    
+            // Single log for header info
+            console.log('PLY Header:', {
+                format: header.format,
+                vertices: header.numVertices,
+                faces: header.numFaces,
+                properties: Object.keys(header.properties).length
+            });
+    
+            return header;
+        } catch (error) {
+            console.error('Error parsing PLY header:', error);
+            throw error;
+        }
+    }
+    
+    async parseBinaryData(header, dataView, result) {
+        try {
+            let offset = header.headerLength;
+            const littleEndian = header.format.includes('little_endian');
+            console.log('Starting binary parse at offset:', offset);
+            console.log('Total data length:', dataView.byteLength);
+    
+            // Read vertices
+            for (let i = 0; i < header.numVertices; i++) {
+                // Read vertex properties
+                for (const [propName, prop] of Object.entries(header.properties)) {
+                    if (prop.isList) continue;  // Skip list properties when reading vertices
+                    
+                    if (offset + this.propertySizes.get(prop.type) > dataView.byteLength) {
+                        throw new Error(`Buffer overflow at vertex ${i}, property ${propName}`);
+                    }
+    
+                    const value = this.readProperty(dataView, offset, prop.type, littleEndian);
+                    
+                    // Store vertex coordinates
+                    if (propName === 'x' || propName === 'y' || propName === 'z') {
+                        result.vertices.push(value);
+                    }
+                    
+                    offset += this.propertySizes.get(prop.type);
+                }
+            }
+    
+            // Read faces
+            if (header.numFaces > 0) {
+                console.log('Starting face parsing at offset:', offset);
+                
+                for (let i = 0; i < header.numFaces; i++) {
+                    const faceProp = Object.values(header.properties).find(p => p.isList);
+                    if (!faceProp) continue;
+    
+                    // Read number of vertices in this face
+                    const vertexCount = this.readProperty(dataView, offset, faceProp.countType, littleEndian);
+                    offset += this.propertySizes.get(faceProp.countType);
+    
+                    if (vertexCount < 3 || offset + vertexCount * this.propertySizes.get(faceProp.type) > dataView.byteLength) {
+                        console.warn(`Invalid face at index ${i}, vertex count: ${vertexCount}`);
+                        break;
+                    }
+    
+                    // Read vertex indices
+                    const indices = [];
+                    for (let j = 0; j < vertexCount; j++) {
+                        indices.push(this.readProperty(dataView, offset, faceProp.type, littleEndian));
+                        offset += this.propertySizes.get(faceProp.type);
+                    }
+    
+                    // Triangulate if necessary
+                    if (vertexCount === 3) {
+                        result.faces.push(...indices);
+                    } else if (vertexCount > 3) {
+                        // Fan triangulation for polygons
+                        for (let j = 1; j < vertexCount - 1; j++) {
+                            result.faces.push(indices[0], indices[j], indices[j + 1]);
+                        }
+                    }
+                }
+            }
+    
+            console.log('Binary parse complete:', {
+                vertices: result.vertices.length / 3,
+                faces: result.faces.length / 3
+            });
+    
+        } catch (error) {
+            console.error('Error parsing binary data:', error);
+            throw error;
+        }
+    }
+    readProperty(dataView, offset, type, littleEndian) {
+        try {
+            switch (type) {
+                case 'float': 
+                    return dataView.getFloat32(offset, littleEndian);
+                case 'double': 
+                    return dataView.getFloat64(offset, littleEndian);
+                case 'int': 
+                    return dataView.getInt32(offset, littleEndian);
+                case 'uint': 
+                    return dataView.getUint32(offset, littleEndian);
+                case 'short': 
+                    return dataView.getInt16(offset, littleEndian);
+                case 'ushort': 
+                    return dataView.getUint16(offset, littleEndian);
+                case 'uchar': 
+                    return dataView.getUint8(offset);
+                case 'char': 
+                    return dataView.getInt8(offset);
+                default: 
+                    console.warn(`Unsupported property type: ${type}`);
+                    return 0;
+            }
+        } catch (error) {
+            console.error(`Error reading property at offset ${offset}:`, error);
+            return 0;
+        }
+    }
+
+    parseInriaV2Codebook(fileData, header) {
+        const codebook = {
+            scales: [],
+            rotations: {
+                real: [],
+                imaginary: []
+            },
+            colors: [],
+            opacity: []
+        };
+
+        const data = this.getVertexData(fileData, header);
+        let offset = 0;
+
+        // Read codebook entries
+        for (let i = 0; i < header.codebookSize; i++) {
+            for (const field of this.inriaV2Fields.codebook) {
+                const value = this.readProperty(data, offset, header.properties[field]);
+                
+                if (field.startsWith('features_dc')) {
+                    codebook.colors.push(this.normalizeColor(value));
+                } else if (field === 'scaling') {
+                    codebook.scales.push(Math.exp(value));
+                } else if (field === 'rotation_re') {
+                    codebook.rotations.real.push(value);
+                } else if (field === 'rotation_im') {
+                    codebook.rotations.imaginary.push(value);
+                } else if (field === 'opacity') {
+                    codebook.opacity.push((1 / (1 + Math.exp(-value))) * 255);
+                }
+                
+                offset += this.propertySizes.get(header.properties[field].type);
+            }
+        }
+
+        return codebook;
+    }
+
+    decompressPlayCanvasVertex(chunks, index) {
+        const chunkIndex = Math.floor(index / 256);
+        const chunk = chunks[chunkIndex];
+        const localIndex = index % 256;
+
+        return {
+            x: chunk.positions[localIndex * 3],
+            y: chunk.positions[localIndex * 3 + 1],
+            z: chunk.positions[localIndex * 3 + 2],
+            colors: [
+                chunk.colors[localIndex * 3],
+                chunk.colors[localIndex * 3 + 1],
+                chunk.colors[localIndex * 3 + 2]
+            ]
+        };
+    }
+
+    parsePlayCanvasChunks(fileData, header) {
+        const chunks = [];
+        const data = this.getVertexData(fileData, header);
+        let offset = 0;
+
+        for (let i = 0; i < header.numChunks; i++) {
+            chunks.push({
+                positions: this.readChunkPositions(data, offset, header),
+                colors: this.readChunkColors(data, offset + header.positionSize, header)
+            });
+            offset += header.chunkSize;
+        }
+
+        return chunks;
+    }
+}

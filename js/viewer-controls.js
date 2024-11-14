@@ -58,20 +58,20 @@ export class ViewerControls {
         group.className = 'control-group';
         
         const label = document.createElement('label');
-        label.textContent = 'Load 3D File';
+        label.textContent = 'Load PLY File';
         
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = '.ply,.obj,.fbx';
+        fileInput.accept = '.ply';  // Only accept PLY files for now
         fileInput.style.display = 'none';
         
         const button = document.createElement('button');
-        button.textContent = 'Choose 3D File (PLY, OBJ, FBX)';
+        button.textContent = 'Choose PLY File';
         button.className = 'file-button';
         
         const fileInfo = document.createElement('div');
         fileInfo.className = 'file-info';
-        fileInfo.textContent = 'Supported formats: PLY, OBJ, FBX';
+        fileInfo.textContent = 'Select a PLY file to load';
         
         button.addEventListener('click', () => {
             fileInput.click();
@@ -81,9 +81,8 @@ export class ViewerControls {
             const file = e.target.files[0];
             if (!file) return;
             
-            const fileExtension = file.name.split('.').pop().toLowerCase();
-            if (!['ply', 'obj', 'fbx'].includes(fileExtension)) {
-                fileInfo.textContent = 'Unsupported file format';
+            if (!file.name.toLowerCase().endsWith('.ply')) {
+                fileInfo.textContent = 'Please select a PLY file';
                 return;
             }
             
@@ -94,11 +93,18 @@ export class ViewerControls {
                 const reader = new FileReader();
                 reader.onload = async (event) => {
                     try {
-                        const text = event.target.result;
-                        await this.renderer.loadModel(text, fileExtension);
+                        // Create a URL for the file
+                        const url = URL.createObjectURL(new Blob([event.target.result]));
+                        
+                        // Load the PLY file
+                        await this.renderer.loadPLY(url);
+                        
                         fileInfo.textContent = `Loaded: ${file.name}`;
+                        
+                        // Clean up the URL
+                        URL.revokeObjectURL(url);
                     } catch (error) {
-                        console.error('Error processing file:', error);
+                        console.error('Error loading PLY:', error);
                         fileInfo.textContent = `Error: ${error.message}`;
                     } finally {
                         button.disabled = false;
@@ -110,9 +116,11 @@ export class ViewerControls {
                     button.disabled = false;
                 };
                 
-                reader.readAsText(file);
+                // Read as ArrayBuffer
+                reader.readAsArrayBuffer(file);
+                
             } catch (error) {
-                console.error('Error loading file:', error);
+                console.error('Error processing file:', error);
                 fileInfo.textContent = `Error: ${error.message}`;
                 button.disabled = false;
             }
@@ -125,7 +133,6 @@ export class ViewerControls {
         
         return group;
     }
-
     createCameraInfo() {
         const group = document.createElement('div');
         group.className = 'control-group camera-info';

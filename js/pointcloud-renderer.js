@@ -3,6 +3,7 @@ import { SHADERS } from './shaders.js';
 import { mat4 } from 'https://cdn.skypack.dev/gl-matrix';
 
 export class PointCloudRenderer {
+
     constructor(gl) {
         this.gl = gl;
         console.log('Initializing PointCloudRenderer with WebGL 1');
@@ -12,9 +13,17 @@ export class PointCloudRenderer {
             min: { x: Infinity, y: Infinity, z: Infinity },
             max: { x: -Infinity, y: -Infinity, z: -Infinity }
         };
-
+    
         // Initialize ModelLoader
         this.modelLoader = new ModelLoader();
+        
+        // Initialize propertySizes map
+        this.propertySizes = new Map([
+            ['char', 1], ['uchar', 1],
+            ['short', 2], ['ushort', 2],
+            ['int', 4], ['uint', 4],
+            ['float', 4], ['double', 8]
+        ]);
         
         this.initBuffers();
         const shadersInitialized = this.initShaders();
@@ -35,8 +44,7 @@ export class PointCloudRenderer {
         this.uint32Indices = gl.getExtension('OES_element_index_uint');
         console.log('32-bit indices ' + (this.uint32Indices ? 'enabled' : 'not available'));
     }
-
-
+    
     initBuffers() {
         this.buffers = {
             position: this.gl.createBuffer(),
@@ -51,33 +59,38 @@ export class PointCloudRenderer {
     initShaders() {
         try {
             const gl = this.gl;
-
+    
             // Create shader program for points
             const vertexShader = this.createShader(gl.VERTEX_SHADER, SHADERS.point.vertex);
             const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, SHADERS.point.fragment);
-
+    
             if (!vertexShader || !fragmentShader) {
                 throw new Error('Failed to create shaders');
             }
-
+    
             this.program = gl.createProgram();
             gl.attachShader(this.program, vertexShader);
             gl.attachShader(this.program, fragmentShader);
             gl.linkProgram(this.program);
-
+    
             if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
                 const info = gl.getProgramInfoLog(this.program);
                 throw new Error('Could not link WebGL program. \n\n' + info);
             }
-
-            // Get attributes
+    
+            // Get attributes - IMPORTANT: These must match the shader exactly
             this.attributes = {
                 position: gl.getAttribLocation(this.program, 'aPosition'),
                 normal: gl.getAttribLocation(this.program, 'aNormal'),
                 color: gl.getAttribLocation(this.program, 'aColor'),
                 curvature: gl.getAttribLocation(this.program, 'aCurvature')
             };
-
+    
+            // Validate required attributes
+            if (this.attributes.position === -1) {
+                throw new Error('Could not find position attribute');
+            }
+    
             // Get uniforms
             this.uniforms = {
                 modelView: gl.getUniformLocation(this.program, 'uModelViewMatrix'),
@@ -87,7 +100,18 @@ export class PointCloudRenderer {
                 nearPlane: gl.getUniformLocation(this.program, 'uNearPlane'),
                 farPlane: gl.getUniformLocation(this.program, 'uFarPlane')
             };
-
+    
+            // Validate required uniforms
+            if (!this.uniforms.modelView || !this.uniforms.projection || !this.uniforms.pointSize) {
+                throw new Error('Could not find required uniforms');
+            }
+    
+            console.log('Shader initialization successful', {
+                attributes: Object.entries(this.attributes).map(([name, location]) => 
+                    `${name}: ${location}`).join(', '),
+                uniforms: Object.keys(this.uniforms).join(', ')
+            });
+    
             return true;
         } catch (error) {
             console.error('Error initializing shaders:', error);
@@ -95,48 +119,80 @@ export class PointCloudRenderer {
         }
     }
 
-
     initMeshShaders() {
-        // Initialize mesh shader program similar to point shader program
-        const vertexShader = this.createShader(this.gl.VERTEX_SHADER, SHADERS.mesh.vertex);
-        const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, SHADERS.mesh.fragment);
-        
-        this.meshProgram = this.gl.createProgram();
-        this.gl.attachShader(this.meshProgram, vertexShader);
-        this.gl.attachShader(this.meshProgram, fragmentShader);
-        this.gl.linkProgram(this.meshProgram);
-        
-        // Get mesh attribute and uniform locations
-        this.meshAttributes = {
-            position: this.gl.getAttribLocation(this.meshProgram, 'aPosition'),
-            normal: this.gl.getAttribLocation(this.meshProgram, 'aNormal'),
-            color: this.gl.getAttribLocation(this.meshProgram, 'aColor'),
-            texCoord: this.gl.getAttribLocation(this.meshProgram, 'aTexCoord')
-        };
-        
-        this.meshUniforms = {
-            modelView: this.gl.getUniformLocation(this.meshProgram, 'uModelViewMatrix'),
-            projection: this.gl.getUniformLocation(this.meshProgram, 'uProjectionMatrix'),
-            normalMatrix: this.gl.getUniformLocation(this.meshProgram, 'uNormalMatrix'),
-            viewMode: this.gl.getUniformLocation(this.meshProgram, 'uViewMode'),
-            wireframe: this.gl.getUniformLocation(this.meshProgram, 'uWireframe'),
-            nearPlane: this.gl.getUniformLocation(this.meshProgram, 'uNearPlane'),
-            farPlane: this.gl.getUniformLocation(this.meshProgram, 'uFarPlane')
-        };
-    }
+        try {
+            const gl = this.gl;
     
+            // Create shader program for mesh
+            const vertexShader = this.createShader(gl.VERTEX_SHADER, SHADERS.mesh.vertex);
+            const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, SHADERS.mesh.fragment);
+    
+            if (!vertexShader || !fragmentShader) {
+                throw new Error('Failed to create mesh shaders');
+            }
+    
+            this.meshProgram = gl.createProgram();
+            gl.attachShader(this.meshProgram, vertexShader);
+            gl.attachShader(this.meshProgram, fragmentShader);
+            gl.linkProgram(this.meshProgram);
+    
+            if (!gl.getProgramParameter(this.meshProgram, gl.LINK_STATUS)) {
+                const info = gl.getProgramInfoLog(this.meshProgram);
+                throw new Error('Could not link WebGL mesh program. \n\n' + info);
+            }
+    
+            // Get mesh attributes
+            this.meshAttributes = {
+                position: gl.getAttribLocation(this.meshProgram, 'aPosition'),
+                normal: gl.getAttribLocation(this.meshProgram, 'aNormal'),
+                color: gl.getAttribLocation(this.meshProgram, 'aColor'),
+                texCoord: gl.getAttribLocation(this.meshProgram, 'aTexCoord')
+            };
+    
+            // Check if required attributes were found
+            if (this.meshAttributes.position === -1) {
+                console.error('Could not find position attribute in mesh shader');
+            }
+    
+            // Get mesh uniforms
+            this.meshUniforms = {
+                modelView: gl.getUniformLocation(this.meshProgram, 'uModelViewMatrix'),
+                projection: gl.getUniformLocation(this.meshProgram, 'uProjectionMatrix'),
+                normalMatrix: gl.getUniformLocation(this.meshProgram, 'uNormalMatrix'),
+                viewMode: gl.getUniformLocation(this.meshProgram, 'uViewMode'),
+                wireframe: gl.getUniformLocation(this.meshProgram, 'uWireframe'),
+                nearPlane: gl.getUniformLocation(this.meshProgram, 'uNearPlane'),
+                farPlane: gl.getUniformLocation(this.meshProgram, 'uFarPlane')
+            };
+    
+            // Check if required uniforms were found
+            if (this.meshUniforms.modelView === null || 
+                this.meshUniforms.projection === null || 
+                this.meshUniforms.normalMatrix === null) {
+                throw new Error('Could not find required uniforms in mesh shader');
+            }
+    
+            return true;
+        } catch (error) {
+            console.error('Error initializing mesh shaders:', error);
+            return false;
+        }
+    }
 
     createShader(type, source) {
-        const shader = this.gl.createShader(type);
-        this.gl.shaderSource(shader, source);
-        this.gl.compileShader(shader);
-
-        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-            console.error('Shader compilation error:', this.gl.getShaderInfoLog(shader));
-            this.gl.deleteShader(shader);
+        const gl = this.gl;
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+    
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            const info = gl.getShaderInfoLog(shader);
+            console.error('Shader compilation error:', info);
+            console.error('Shader source:', source);
+            gl.deleteShader(shader);
             return null;
         }
-
+    
         return shader;
     }
 
@@ -150,125 +206,145 @@ export class PointCloudRenderer {
 
     updateBuffers(data) {
         const gl = this.gl;
-    
-        // Log buffer data for debugging
-        console.log('Updating buffers with data:', {
-            verticesLength: data.vertices.length,
-            hasNormals: !!data.normals,
-            hasColors: !!data.colors,
-            vertexCount: data.vertices.length / 3
+        
+        // Reset previous buffers
+        Object.values(this.buffers).forEach(buffer => {
+            if (buffer) gl.deleteBuffer(buffer);
         });
+        
+        this.initBuffers(); // Reinitialize buffers
     
         // Ensure vertices are in Float32Array format
         const vertices = data.vertices instanceof Float32Array ? 
             data.vertices : new Float32Array(data.vertices);
-    
-        // Calculate vertex count
+        
         this.vertexCount = vertices.length / 3;
-    
-        // Bind and upload position buffer
+        
+        // Initialize position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-        console.log('Position buffer updated with', vertices.length, 'values');
     
-        // Handle normals - ensure same length as vertices
-        let normals;
-        if (data.normals && data.normals.length === vertices.length) {
-            normals = data.normals instanceof Float32Array ?
-                data.normals : new Float32Array(data.normals);
-        } else {
-            // Create default normals for all vertices
-            normals = new Float32Array(vertices.length);
-            for (let i = 0; i < vertices.length; i += 3) {
-                normals[i] = 0;
-                normals[i + 1] = 1;
-                normals[i + 2] = 0;
-            }
-        }
+        // Initialize normal buffer with defaults if not provided
+        const normals = data.normals instanceof Float32Array ? 
+            data.normals : 
+            new Float32Array(vertices.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
         gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
-        console.log('Normal buffer updated with', normals.length, 'values');
     
-        // Handle colors - ensure same length as vertices
-        let colors;
-        if (data.colors && data.colors.length > 0) {
-            colors = data.colors instanceof Float32Array ?
-                data.colors : new Float32Array(data.colors);
-            
-            // If colors array is shorter than vertices, extend it
-            if (colors.length !== vertices.length) {
-                const extendedColors = new Float32Array(vertices.length);
-                const lastColor = [colors[colors.length - 3], colors[colors.length - 2], colors[colors.length - 1]];
-                
-                // Copy existing colors
-                for (let i = 0; i < colors.length; i++) {
-                    extendedColors[i] = colors[i];
-                }
-                
-                // Fill remaining vertices with last color
-                for (let i = colors.length; i < vertices.length; i += 3) {
-                    extendedColors[i] = lastColor[0];
-                    extendedColors[i + 1] = lastColor[1];
-                    extendedColors[i + 2] = lastColor[2];
-                }
-                
-                colors = extendedColors;
-            }
-    
-            // Normalize colors if they're in 0-255 range
-            if (colors.some(c => c > 1.0)) {
-                for (let i = 0; i < colors.length; i++) {
-                    colors[i] = colors[i] / 255;
-                }
-            }
-        } else {
-            // Create default white colors for all vertices
-            colors = new Float32Array(vertices.length);
-            for (let i = 0; i < vertices.length; i += 3) {
-                colors[i] = 1.0;     // R
-                colors[i + 1] = 1.0; // G
-                colors[i + 2] = 1.0; // B
-            }
-        }
+        // Initialize color buffer with white if not provided
+        const colors = data.colors instanceof Float32Array ?
+            data.colors :
+            new Float32Array(vertices.length).fill(1.0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
         gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
-        console.log('Color buffer updated with', colors.length, 'values');
     
-        // Update face-related buffers if available
-        if (data.faces && data.faces.length > 0) {
-            let indices;
-            if (!this.uint32Indices && data.faces instanceof Uint32Array) {
-                // Check if any index exceeds UNSIGNED_SHORT limit
-                if (data.faces.some(index => index > 65535)) {
-                    console.error('Model has too many vertices for WebGL 1 without OES_element_index_uint extension');
-                    return;
-                }
-                indices = new Uint16Array(data.faces);
-            } else {
-                indices = data.faces;
+        // Initialize curvature buffer with default values
+        const curvature = new Float32Array(this.vertexCount).fill(0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.curvature);
+        gl.bufferData(gl.ARRAY_BUFFER, curvature, gl.STATIC_DRAW);
+    
+        console.log('Buffers initialized with:', {
+            vertexCount: this.vertexCount,
+            hasNormals: !!data.normals,
+            hasColors: !!data.colors,
+            bufferSizes: {
+                vertices: vertices.length,
+                normals: normals.length,
+                colors: colors.length,
+                curvature: curvature.length
             }
-            
-            this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.buffers.indices);
-            this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, indices, this.gl.STATIC_DRAW);
-            this.indexCount = indices.length;
-        }
-        
-        if (data.textureCoords && data.textureCoords.length > 0) {
-            this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.texCoords);
-            this.gl.bufferData(this.gl.ARRAY_BUFFER, data.textureCoords, this.gl.STATIC_DRAW);
-        }
-    
-        console.log('Final buffer lengths:', {
-            vertices: vertices.length,
-            normals: normals.length,
-            colors: colors.length,
-            vertexCount: this.vertexCount
         });
     }
 
+    async parseBinaryData(header, dataView, result) {
+        try {
+            let offset = header.headerLength;
+            const littleEndian = header.format.includes('little_endian');
+            
+            // Helper function to validate offset
+            const validateOffset = (size) => {
+                if (offset + size > dataView.byteLength) {
+                    throw new Error(`Buffer overflow at offset ${offset}, needs ${size} bytes`);
+                }
+            };
+    
+            // Read vertices
+            for (let i = 0; i < header.numVertices; i++) {
+                for (const [propName, prop] of Object.entries(header.properties)) {
+                    if (prop.isList) continue;
+    
+                    const propSize = this.propertySizes.get(prop.type);
+                    validateOffset(propSize);
+                    
+                    const value = this.readProperty(dataView, offset, prop.type, littleEndian);
+                    offset += propSize;
+    
+                    if (propName === 'x' || propName === 'y' || propName === 'z') {
+                        result.vertices.push(value);
+                    } else if (propName === 'nx' || propName === 'ny' || propName === 'nz') {
+                        result.normals.push(value);
+                    } else if (propName === 'red' || propName === 'green' || propName === 'blue') {
+                        result.colors.push(value / 255);
+                    }
+                }
+            }
+    
+            // Read faces
+            if (header.numFaces > 0) {
+                const faceProp = Object.values(header.properties).find(p => p.isList);
+                if (faceProp) {
+                    for (let i = 0; i < header.numFaces; i++) {
+                        validateOffset(this.propertySizes.get(faceProp.countType));
+                        const vertexCount = this.readProperty(dataView, offset, faceProp.countType, littleEndian);
+                        offset += this.propertySizes.get(faceProp.countType);
+    
+                        if (vertexCount >= 3) {
+                            const indices = [];
+                            for (let j = 0; j < vertexCount; j++) {
+                                validateOffset(this.propertySizes.get(faceProp.type));
+                                const index = this.readProperty(dataView, offset, faceProp.type, littleEndian);
+                                indices.push(index);
+                                offset += this.propertySizes.get(faceProp.type);
+                            }
+    
+                            // Triangulate face
+                            for (let j = 1; j < vertexCount - 1; j++) {
+                                result.faces.push(indices[0], indices[j], indices[j + 1]);
+                            }
+                        }
+                    }
+                }
+            }
+    
+        } catch (error) {
+            console.error('Error parsing binary data:', error);
+            console.error('At offset:', offset);
+            throw error;
+        }
+    }
+    
+    // Update readProperty to handle endianness consistently
+    readProperty(dataView, offset, type, littleEndian = true) {
+        try {
+            switch (type) {
+                case 'float': return dataView.getFloat32(offset, littleEndian);
+                case 'double': return dataView.getFloat64(offset, littleEndian);
+                case 'int': return dataView.getInt32(offset, littleEndian);
+                case 'uint': return dataView.getUint32(offset, littleEndian);
+                case 'short': return dataView.getInt16(offset, littleEndian);
+                case 'ushort': return dataView.getUint16(offset, littleEndian);
+                case 'uchar': return dataView.getUint8(offset);
+                case 'char': return dataView.getInt8(offset);
+                default: return 0;
+            }
+        } catch (error) {
+            throw new Error(`Error reading ${type} at offset ${offset}: ${error.message}`);
+        }
+    }
 
     bindAttributes() {
         const gl = this.gl;
+        gl.useProgram(this.program);
         
         // Bind position attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
@@ -288,19 +364,29 @@ export class PointCloudRenderer {
             gl.enableVertexAttribArray(this.attributes.color);
             gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
         }
+
+        // Bind curvature attribute
+        if (this.attributes.curvature !== -1) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.curvature);
+            gl.enableVertexAttribArray(this.attributes.curvature);
+            gl.vertexAttribPointer(this.attributes.curvature, 1, gl.FLOAT, false, 0, 0);
+        }
     }
 
     drawPoints(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
-
+    
         if (!this.program || !this.uniforms || !this.attributes || this.vertexCount === 0) {
-            console.error('Cannot draw points: not properly initialized or no data');
+            console.error('Cannot draw points: not properly initialized');
             return;
         }
-
+    
         try {
             gl.useProgram(this.program);
-
+    
+            // Clear error flag before drawing
+            gl.getError();
+    
             // Set uniforms
             gl.uniformMatrix4fv(this.uniforms.projection, false, projectionMatrix);
             gl.uniformMatrix4fv(this.uniforms.modelView, false, modelViewMatrix);
@@ -308,22 +394,56 @@ export class PointCloudRenderer {
             gl.uniform1i(this.uniforms.viewMode, this.viewMode);
             gl.uniform1f(this.uniforms.nearPlane, 0.1);
             gl.uniform1f(this.uniforms.farPlane, 1000.0);
-
-            // Bind attributes
-            this.bindAttributes();
-
-            // Draw
+    
+            // Enable vertex attributes
+            gl.enableVertexAttribArray(this.attributes.position);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+            gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
+    
+            if (this.attributes.normal !== -1) {
+                gl.enableVertexAttribArray(this.attributes.normal);
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
+                gl.vertexAttribPointer(this.attributes.normal, 3, gl.FLOAT, false, 0, 0);
+            }
+    
+            if (this.attributes.color !== -1) {
+                gl.enableVertexAttribArray(this.attributes.color);
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
+                gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
+            }
+    
+            if (this.attributes.curvature !== -1) {
+                gl.enableVertexAttribArray(this.attributes.curvature);
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.curvature);
+                gl.vertexAttribPointer(this.attributes.curvature, 1, gl.FLOAT, false, 0, 0);
+            }
+    
+            // Check for errors before drawing
+            let error = gl.getError();
+            if (error !== gl.NO_ERROR) {
+                throw new Error(`GL error before draw: ${error}`);
+            }
+    
+            // Draw the points
             gl.drawArrays(gl.POINTS, 0, this.vertexCount);
-
-            // Cleanup
-            if (this.attributes.position !== -1) gl.disableVertexAttribArray(this.attributes.position);
+    
+            // Check for errors after drawing
+            error = gl.getError();
+            if (error !== gl.NO_ERROR) {
+                throw new Error(`GL error after draw: ${error}`);
+            }
+    
+        } catch (error) {
+            console.error('Error in drawPoints:', error);
+        } finally {
+            // Cleanup - disable vertex attributes
+            gl.disableVertexAttribArray(this.attributes.position);
             if (this.attributes.normal !== -1) gl.disableVertexAttribArray(this.attributes.normal);
             if (this.attributes.color !== -1) gl.disableVertexAttribArray(this.attributes.color);
-        } catch (error) {
-            console.error('Error drawing points:', error);
+            if (this.attributes.curvature !== -1) gl.disableVertexAttribArray(this.attributes.curvature);
         }
     }
-    
+
     bindMeshAttributes() {
         const gl = this.gl;
         
@@ -403,23 +523,60 @@ export class PointCloudRenderer {
 
     async loadPLY(filePath) {
         try {
+            console.log('Starting PLY file load from:', filePath);
             const response = await fetch(filePath);
+            
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            const text = await response.text();
-            console.log('Loading PLY file...');
-            const data = await this.modelLoader.loadPLY(text);
             
+            const buffer = await response.arrayBuffer();
+            console.log('Received PLY data, size:', buffer.byteLength);
+    
+            const data = await this.modelLoader.loadFile(buffer, 'ply');
+            console.log('Parsed PLY data:', {
+                vertexCount: data?.vertices?.length / 3,
+                hasNormals: !!data?.normals,
+                hasColors: !!data?.colors,
+                bounds: data?.bounds
+            });
+    
             if (!data || !data.vertices || data.vertices.length === 0) {
                 throw new Error('No valid vertex data found in PLY file');
             }
-
-            this.updateBuffers(data);
-            this.calculateBounds(data.vertices);
-            this.vertexCount = data.vertices.length / 3;
-
-            // Emit modelLoaded event
+    
+            // Convert data to typed arrays if needed
+            const vertices = data.vertices instanceof Float32Array ? 
+                data.vertices : new Float32Array(data.vertices);
+                
+            const normals = data.normals instanceof Float32Array ?
+                data.normals : data.normals ? new Float32Array(data.normals) : null;
+                
+            const colors = data.colors instanceof Float32Array ?
+                data.colors : data.colors ? new Float32Array(data.colors) : null;
+    
+            // Update buffers with the processed data
+            this.updateBuffers({
+                vertices: vertices,
+                normals: normals,
+                colors: colors
+            });
+    
+            // Calculate bounds for camera positioning
+            this.calculateBounds(vertices);
+            this.vertexCount = vertices.length / 3;
+    
+            console.log('Successfully loaded PLY with:', {
+                vertices: this.vertexCount,
+                bounds: this.bounds,
+                bufferSizes: {
+                    vertices: vertices.length,
+                    normals: normals?.length || 0,
+                    colors: colors?.length || 0
+                }
+            });
+    
+            // Dispatch success event
             window.dispatchEvent(new CustomEvent('modelLoaded', {
                 detail: {
                     type: 'ply',
@@ -427,10 +584,11 @@ export class PointCloudRenderer {
                     bounds: this.bounds
                 }
             }));
-
+    
             return true;
         } catch (error) {
             console.error('Error loading PLY:', error);
+            console.error('Stack trace:', error.stack);
             throw error;
         }
     }
@@ -577,5 +735,28 @@ export class PointCloudRenderer {
         }
 
         console.log('Calculated bounds:', this.bounds);
+    }
+
+    cleanup() {
+        const gl = this.gl;
+        
+        // Delete point shader program resources
+        if (this.program) {
+            const shaders = gl.getAttachedShaders(this.program);
+            shaders?.forEach(shader => gl.deleteShader(shader));
+            gl.deleteProgram(this.program);
+        }
+        
+        // Delete mesh shader program resources
+        if (this.meshProgram) {
+            const shaders = gl.getAttachedShaders(this.meshProgram);
+            shaders?.forEach(shader => gl.deleteShader(shader));
+            gl.deleteProgram(this.meshProgram);
+        }
+        
+        // Delete buffers
+        Object.values(this.buffers).forEach(buffer => {
+            if (buffer) gl.deleteBuffer(buffer);
+        });
     }
 }
