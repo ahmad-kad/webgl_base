@@ -48,6 +48,9 @@ export class ViewerControls {
         
         // Point size control
         container.appendChild(this.createPointSizeControl());
+
+        // Octree Controls
+        container.appendChild(this.createOctreeControls());
         
         document.body.appendChild(container);
     }
@@ -197,6 +200,42 @@ export class ViewerControls {
         
         group.appendChild(label);
         group.appendChild(controls);
+        return group;
+    }
+
+    createOctreeControls() {
+        const group = document.createElement('div');
+        group.className = 'control-group';
+        
+        const label = document.createElement('label');
+        label.textContent = 'Octree Visualization';
+        
+        // Single toggle container
+        const toggleContainer = document.createElement('div');
+        toggleContainer.className = 'toggle-container';
+        
+        const toggleLabel = document.createElement('span');
+        toggleLabel.textContent = 'Show Octree';
+        
+        const toggle = document.createElement('input');
+        toggle.type = 'checkbox';
+        toggle.id = 'octreeToggle';
+        toggle.checked = this.renderer.useOctree && this.renderer.showOctreeDebug;
+        
+        // Single event listener to control both features
+        toggle.addEventListener('change', (e) => {
+            const isEnabled = e.target.checked;
+            this.renderer.useOctree = isEnabled;
+            this.renderer.showOctreeDebug = isEnabled;
+        });
+        
+        // Assemble the container
+        toggleContainer.appendChild(toggleLabel);
+        toggleContainer.appendChild(toggle);
+        
+        group.appendChild(label);
+        group.appendChild(toggleContainer);
+        
         return group;
     }
 
@@ -516,6 +555,59 @@ export class ViewerControls {
                 height: 40px;
                 width: 40px;
             }
+
+            /* Octree Controls */
+            .toggle-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin: 10px 0;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 8px;
+            }
+
+            .toggle-container span {
+                color: #ddd;
+                font-size: 14px;
+            }
+
+            .toggle-container input[type="checkbox"] {
+                position: relative;
+                width: 50px;
+                height: 26px;
+                appearance: none;
+                background: #333;
+                border-radius: 13px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+
+            .toggle-container input[type="checkbox"]::before {
+                content: '';
+                position: absolute;
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                top: 2px;
+                left: 2px;
+                background: #666;
+                transition: all 0.3s ease;
+            }
+
+            .toggle-container input[type="checkbox"]:checked {
+                background: #4CAF50;
+            }
+
+            .toggle-container input[type="checkbox"]:checked::before {
+                left: 26px;
+                background: white;
+            }
+
+            .toggle-container input[type="checkbox"]:focus {
+                outline: none;
+                box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
+            }
         `;
         
         document.head.appendChild(style);
@@ -662,7 +754,10 @@ export class ViewerControls {
 
 
     async checkVRSupport() {
-        if (!this.xrControls || !('xr' in navigator)) return;
+        if (!('xr' in navigator)) {
+            console.log('WebXR not supported');
+            return;
+        }
         
         try {
             const isSupported = await navigator.xr.isSessionSupported('immersive-vr');
@@ -672,6 +767,9 @@ export class ViewerControls {
         } catch (error) {
             console.error('Error checking VR support:', error);
         }
+        
+        // Add VR button anyway to show unsupported state
+        this.addVRButton();
     }
 
     addVRButton() {

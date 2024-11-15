@@ -181,4 +181,23 @@ export const SHADERS = {
         `}
 };
 
+export const DEBUG_SHADERS = {
+    vertex: `
+        attribute vec3 aPosition;
+        uniform mat4 uProjectionMatrix;
+        uniform mat4 uModelViewMatrix;
+        
+        void main() {
+            gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+        }
+    `,
+    fragment: `
+        precision mediump float;
+        
+        void main() {
+            gl_FragColor = vec4(0.0, 1.0, 0.0, 0.3); // Semi-transparent green
+        }
+    `
+};
+
 console.log('Shaders module loaded successfully');

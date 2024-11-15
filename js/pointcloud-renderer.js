@@ -1,11 +1,18 @@
 import { ModelLoader } from './model-loader.js';
-import { SHADERS } from './shaders.js';
+import { SHADERS, DEBUG_SHADERS } from './shaders.js';
 import { mat4 } from 'https://cdn.skypack.dev/gl-matrix';
+import { Octree } from './octree.js';
+import { Frustum } from './frustum.js';
 
 export class PointCloudRenderer {
 
     constructor(gl) {
         this.gl = gl;
+        this.octree = null;
+
+        this.useOctree = true;
+        this.showOctreeDebug = true; 
+
         console.log('Initializing PointCloudRenderer with WebGL 1');
         
         // Initialize bounds first
@@ -28,11 +35,14 @@ export class PointCloudRenderer {
         this.initBuffers();
         const shadersInitialized = this.initShaders();
         const meshShadersInitialized = this.initMeshShaders();
+        const debugShadersInitialized = this.initDebugShaders(); 
+    
         
-        if (!shadersInitialized || !meshShadersInitialized) {
+        if (!shadersInitialized || !meshShadersInitialized || !debugShadersInitialized) {
             console.error('Failed to initialize shaders');
             return;
         }
+    
         
         this.viewMode = 0;
         this.pointSize = 5.0;
@@ -44,7 +54,7 @@ export class PointCloudRenderer {
         this.uint32Indices = gl.getExtension('OES_element_index_uint');
         console.log('32-bit indices ' + (this.uint32Indices ? 'enabled' : 'not available'));
     }
-    
+
     initBuffers() {
         this.buffers = {
             position: this.gl.createBuffer(),
@@ -179,6 +189,49 @@ export class PointCloudRenderer {
         }
     }
 
+    initDebugShaders() {
+        try {
+            const gl = this.gl;
+            
+            // Create and compile shaders
+            const vertexShader = this.createShader(gl.VERTEX_SHADER, DEBUG_SHADERS.vertex);
+            const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, DEBUG_SHADERS.fragment);
+            
+            if (!vertexShader || !fragmentShader) {
+                throw new Error('Failed to create debug shaders');
+            }
+            
+            // Create program
+            this.debugProgram = gl.createProgram();
+            gl.attachShader(this.debugProgram, vertexShader);
+            gl.attachShader(this.debugProgram, fragmentShader);
+            gl.linkProgram(this.debugProgram);
+            
+            if (!gl.getProgramParameter(this.debugProgram, gl.LINK_STATUS)) {
+                const info = gl.getProgramInfoLog(this.debugProgram);
+                throw new Error('Could not link debug program. \n\n' + info);
+            }
+            
+            // Get locations
+            this.debugAttribs = {
+                position: gl.getAttribLocation(this.debugProgram, 'aPosition')
+            };
+            
+            this.debugUniforms = {
+                projection: gl.getUniformLocation(this.debugProgram, 'uProjectionMatrix'),
+                modelView: gl.getUniformLocation(this.debugProgram, 'uModelViewMatrix')
+            };
+            
+            // Create buffer for debug lines
+            this.debugBuffer = gl.createBuffer();
+            
+            return true;
+        } catch (error) {
+            console.error('Error initializing debug shaders:', error);
+            return false;
+        }
+    }
+
     createShader(type, source) {
         const gl = this.gl;
         const shader = gl.createShader(type);
@@ -207,48 +260,89 @@ export class PointCloudRenderer {
     updateBuffers(data) {
         const gl = this.gl;
         
+        // Store original data
+        this.originalVertices = data.vertices instanceof Float32Array ? 
+            data.vertices : new Float32Array(data.vertices);
+        this.originalNormals = data.normals instanceof Float32Array ? 
+            data.normals : data.normals ? new Float32Array(data.normals) : null;
+        this.originalColors = data.colors instanceof Float32Array ?
+            data.colors : data.colors ? new Float32Array(data.colors) : new Float32Array(this.originalVertices.length).fill(1.0);
+                
+        this.vertexCount = this.originalVertices.length / 3;
+    
         // Reset previous buffers
         Object.values(this.buffers).forEach(buffer => {
             if (buffer) gl.deleteBuffer(buffer);
         });
         
-        this.initBuffers(); // Reinitialize buffers
+        this.initBuffers();
     
-        // Ensure vertices are in Float32Array format
-        const vertices = data.vertices instanceof Float32Array ? 
-            data.vertices : new Float32Array(data.vertices);
-        
-        this.vertexCount = vertices.length / 3;
-        
-        // Initialize position buffer
+        // Initialize buffers
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, this.originalVertices, gl.STATIC_DRAW);
     
-        // Initialize normal buffer with defaults if not provided
-        const normals = data.normals instanceof Float32Array ? 
-            data.normals : 
-            new Float32Array(vertices.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0);
+        // Initialize normals
+        const normals = this.originalNormals || 
+            new Float32Array(this.originalVertices.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
         gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
     
-        // Initialize color buffer with white if not provided
-        const colors = data.colors instanceof Float32Array ?
-            data.colors :
-            new Float32Array(vertices.length).fill(1.0);
+        // Initialize colors - moved before octree creation
+        const colors = this.originalColors;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
         gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
     
-        // Initialize curvature buffer with default values
+        // Initialize curvature
         const curvature = new Float32Array(this.vertexCount).fill(0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.curvature);
         gl.bufferData(gl.ARRAY_BUFFER, curvature, gl.STATIC_DRAW);
     
+        // Build octree
+        const bounds = {
+            min: { x: Infinity, y: Infinity, z: Infinity },
+            max: { x: -Infinity, y: -Infinity, z: -Infinity }
+        };
+    
+        // Calculate bounds and build octree data
+        for (let i = 0; i < this.originalVertices.length; i += 3) {
+            bounds.min.x = Math.min(bounds.min.x, this.originalVertices[i]);
+            bounds.min.y = Math.min(bounds.min.y, this.originalVertices[i + 1]);
+            bounds.min.z = Math.min(bounds.min.z, this.originalVertices[i + 2]);
+            bounds.max.x = Math.max(bounds.max.x, this.originalVertices[i]);
+            bounds.max.y = Math.max(bounds.max.y, this.originalVertices[i + 1]);
+            bounds.max.z = Math.max(bounds.max.z, this.originalVertices[i + 2]);
+        }
+    
+        // Create octree
+        const center = {
+            x: (bounds.max.x + bounds.min.x) / 2,
+            y: (bounds.max.y + bounds.min.y) / 2,
+            z: (bounds.max.z + bounds.min.z) / 2
+        };
+        const size = Math.max(
+            bounds.max.x - bounds.min.x,
+            bounds.max.y - bounds.min.y,
+            bounds.max.z - bounds.min.z
+        ) / 2;
+    
+        this.octree = new Octree(center, size);
+        
+        // Insert points into octree
+        for (let i = 0; i < this.originalVertices.length; i += 3) {
+            this.octree.insert({
+                x: this.originalVertices[i],
+                y: this.originalVertices[i + 1],
+                z: this.originalVertices[i + 2],
+                index: i / 3
+            });
+        }
+    
         console.log('Buffers initialized with:', {
             vertexCount: this.vertexCount,
-            hasNormals: !!data.normals,
-            hasColors: !!data.colors,
+            hasNormals: !!this.originalNormals,
+            hasColors: !!this.originalColors,
             bufferSizes: {
-                vertices: vertices.length,
+                vertices: this.originalVertices.length,
                 normals: normals.length,
                 colors: colors.length,
                 curvature: curvature.length
@@ -376,16 +470,13 @@ export class PointCloudRenderer {
     drawPoints(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
     
-        if (!this.program || !this.uniforms || !this.attributes || this.vertexCount === 0) {
+        if (!this.program || !this.uniforms || !this.attributes || !this.originalVertices) {
             console.error('Cannot draw points: not properly initialized');
             return;
         }
     
         try {
             gl.useProgram(this.program);
-    
-            // Clear error flag before drawing
-            gl.getError();
     
             // Set uniforms
             gl.uniformMatrix4fv(this.uniforms.projection, false, projectionMatrix);
@@ -395,48 +486,91 @@ export class PointCloudRenderer {
             gl.uniform1f(this.uniforms.nearPlane, 0.1);
             gl.uniform1f(this.uniforms.farPlane, 1000.0);
     
-            // Enable vertex attributes
-            gl.enableVertexAttribArray(this.attributes.position);
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-            gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
-    
-            if (this.attributes.normal !== -1) {
-                gl.enableVertexAttribArray(this.attributes.normal);
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
-                gl.vertexAttribPointer(this.attributes.normal, 3, gl.FLOAT, false, 0, 0);
+            // Update frustum and get visible points
+            if (!this.frustum) {
+                this.frustum = new Frustum();
             }
+            this.frustum.update(projectionMatrix, modelViewMatrix);
     
-            if (this.attributes.color !== -1) {
-                gl.enableVertexAttribArray(this.attributes.color);
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
-                gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
+            // In drawPoints where we handle visible points
+            if (this.octree && this.useOctree) {
+                const cameraPosition = [
+                    -modelViewMatrix[12],
+                    -modelViewMatrix[13],
+                    -modelViewMatrix[14]
+                ];
+                const visiblePoints = this.octree.queryFrustum(this.frustum, cameraPosition);
+                
+                if (visiblePoints.length > 0) {
+                    const positions = new Float32Array(visiblePoints.length * 3);
+                    const colors = new Float32Array(visiblePoints.length * 3);  
+                    
+                    visiblePoints.forEach((point, i) => {
+                        // Position
+                        positions[i * 3] = point.x;
+                        positions[i * 3 + 1] = point.y;
+                        positions[i * 3 + 2] = point.z;
+                        
+                        // Color - get from original color buffer or use default white
+                        if (this.originalColors) {
+                            const originalIndex = point.index * 3;
+                            colors[i * 3] = this.originalColors[originalIndex];
+                            colors[i * 3 + 1] = this.originalColors[originalIndex + 1];
+                            colors[i * 3 + 2] = this.originalColors[originalIndex + 2];
+                        } else {
+                            // Default white color if no colors are present
+                            colors[i * 3] = 1.0;
+                            colors[i * 3 + 1] = 1.0;
+                            colors[i * 3 + 2] = 1.0;
+                        }
+                    });
+            
+                    // Update position buffer
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+                    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+                    gl.enableVertexAttribArray(this.attributes.position);
+                    gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
+            
+                    // Update color buffer
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
+                    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+                    gl.enableVertexAttribArray(this.attributes.color);
+                    gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
+            
+                    // Draw the points
+                    gl.drawArrays(gl.POINTS, 0, visiblePoints.length);
+                    
+                    // Draw octree debug visualization if enabled
+                    if (this.showOctreeDebug) {
+                        this.drawOctreeDebug(projectionMatrix, modelViewMatrix);
+                    }
+                }
+            } else {
+                // When octree is disabled, use original buffers
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+                gl.bufferData(gl.ARRAY_BUFFER, this.originalVertices, gl.DYNAMIC_DRAW);
+                gl.enableVertexAttribArray(this.attributes.position);
+                gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
+
+                if (this.attributes.color !== -1) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
+                    gl.bufferData(gl.ARRAY_BUFFER, this.originalColors || new Float32Array(this.originalVertices.length).fill(1.0), gl.DYNAMIC_DRAW);
+                    gl.enableVertexAttribArray(this.attributes.color);
+                    gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
+                }
+
+                gl.drawArrays(gl.POINTS, 0, this.vertexCount);
             }
-    
-            if (this.attributes.curvature !== -1) {
-                gl.enableVertexAttribArray(this.attributes.curvature);
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.curvature);
-                gl.vertexAttribPointer(this.attributes.curvature, 1, gl.FLOAT, false, 0, 0);
-            }
-    
-            // Check for errors before drawing
-            let error = gl.getError();
-            if (error !== gl.NO_ERROR) {
-                throw new Error(`GL error before draw: ${error}`);
-            }
-    
-            // Draw the points
-            gl.drawArrays(gl.POINTS, 0, this.vertexCount);
-    
-            // Check for errors after drawing
-            error = gl.getError();
-            if (error !== gl.NO_ERROR) {
-                throw new Error(`GL error after draw: ${error}`);
+
+            // Draw octree debug visualization if enabled
+            if (this.showOctreeDebug && this.octree) {
+                this.drawOctreeDebug(projectionMatrix, modelViewMatrix);
             }
     
         } catch (error) {
             console.error('Error in drawPoints:', error);
         } finally {
-            // Cleanup - disable vertex attributes
+            // Cleanup
             gl.disableVertexAttribArray(this.attributes.position);
             if (this.attributes.normal !== -1) gl.disableVertexAttribArray(this.attributes.normal);
             if (this.attributes.color !== -1) gl.disableVertexAttribArray(this.attributes.color);
@@ -759,4 +893,119 @@ export class PointCloudRenderer {
             if (buffer) gl.deleteBuffer(buffer);
         });
     }
+
+    drawOctreeNode(node) {
+        if (!node) {
+            console.warn('Attempted to draw null node');
+            return;
+        }
+        
+        /*console.log('Drawing octree node:', {
+            center: node.center,
+            size: node.size,
+            points: node.points.length,
+            hasChildren: !!node.children
+        });*/
+        
+        // Draw current node bounds
+        this.drawBoundingBox(node.getBounds());
+        
+        // Recursively draw children
+        if (node.children) {
+            for (const child of node.children) {
+                this.drawOctreeNode(child);
+            }
+        }
+    }
+
+    drawOctreeDebug(projectionMatrix, modelViewMatrix) {
+        const gl = this.gl;
+        if (!this.debugProgram || !this.debugBuffer) {
+            console.warn('Debug program not initialized');
+            return;
+        }
+        
+        // Store original program and GL state
+        const originalProgram = gl.getParameter(gl.CURRENT_PROGRAM);
+        
+        // Use debug shader program
+        gl.useProgram(this.debugProgram);
+        
+        // Enable vertex attributes for debug drawing
+        gl.enableVertexAttribArray(this.debugAttribs.position);
+        
+        // Set debug shader uniforms
+        gl.uniformMatrix4fv(this.debugUniforms.projection, false, projectionMatrix);
+        gl.uniformMatrix4fv(this.debugUniforms.modelView, false, modelViewMatrix);
+        
+        // Enable blending for transparent boxes
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        
+        // Draw octree nodes recursively
+        if (this.octree) {
+            this.drawOctreeNode(this.octree);  // Call the method as a member function
+        }
+        
+        // Cleanup
+        gl.disable(gl.BLEND);
+        gl.disableVertexAttribArray(this.debugAttribs.position);
+        
+        // Restore original program
+        gl.useProgram(originalProgram);
+    }
+
+    drawBoundingBox(bounds) {
+        const gl = this.gl;
+        
+        // Generate line segments for box edges
+        const vertices = [];
+        
+        // Front face
+        vertices.push(bounds.min.x, bounds.min.y, bounds.min.z);
+        vertices.push(bounds.max.x, bounds.min.y, bounds.min.z);
+        
+        vertices.push(bounds.max.x, bounds.min.y, bounds.min.z);
+        vertices.push(bounds.max.x, bounds.max.y, bounds.min.z);
+        
+        vertices.push(bounds.max.x, bounds.max.y, bounds.min.z);
+        vertices.push(bounds.min.x, bounds.max.y, bounds.min.z);
+        
+        vertices.push(bounds.min.x, bounds.max.y, bounds.min.z);
+        vertices.push(bounds.min.x, bounds.min.y, bounds.min.z);
+        
+        // Back face
+        vertices.push(bounds.min.x, bounds.min.y, bounds.max.z);
+        vertices.push(bounds.max.x, bounds.min.y, bounds.max.z);
+        
+        vertices.push(bounds.max.x, bounds.min.y, bounds.max.z);
+        vertices.push(bounds.max.x, bounds.max.y, bounds.max.z);
+        
+        vertices.push(bounds.max.x, bounds.max.y, bounds.max.z);
+        vertices.push(bounds.min.x, bounds.max.y, bounds.max.z);
+        
+        vertices.push(bounds.min.x, bounds.max.y, bounds.max.z);
+        vertices.push(bounds.min.x, bounds.min.y, bounds.max.z);
+        
+        // Connecting edges
+        vertices.push(bounds.min.x, bounds.min.y, bounds.min.z);
+        vertices.push(bounds.min.x, bounds.min.y, bounds.max.z);
+        
+        vertices.push(bounds.max.x, bounds.min.y, bounds.min.z);
+        vertices.push(bounds.max.x, bounds.min.y, bounds.max.z);
+        
+        vertices.push(bounds.max.x, bounds.max.y, bounds.min.z);
+        vertices.push(bounds.max.x, bounds.max.y, bounds.max.z);
+        
+        vertices.push(bounds.min.x, bounds.max.y, bounds.min.z);
+        vertices.push(bounds.min.x, bounds.max.y, bounds.max.z);
+        
+        // Update debug buffer and draw
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.debugBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(this.debugAttribs.position, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.LINES, 0, vertices.length / 3);
+    }
+
+
 }

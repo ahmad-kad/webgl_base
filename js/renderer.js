@@ -6,6 +6,7 @@ class Renderer {
         this.initializeComponents();
         this.setupEventListeners();
         this.startRenderLoop();
+        this.showOctree = true;
     }
 
     initializeWebGL() {
