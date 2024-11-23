@@ -35,7 +35,7 @@ export class XRControls {
         if ('xr' in navigator) {
             navigator.xr.isSessionSupported('immersive-vr')
                 .then((supported) => {
-                    if (supported) {
+                    if (supported) { 
                         this.xrButton.style.display = 'block';
                         this.xrButton.addEventListener('click', () => this.startXRSession());
                     }
