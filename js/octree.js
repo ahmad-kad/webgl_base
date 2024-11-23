@@ -1,4 +1,4 @@
-// octree.js
+
 export class Octree {
     constructor(center, size) {
         this.center = center;  // {x, y, z}

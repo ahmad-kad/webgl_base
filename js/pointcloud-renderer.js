@@ -66,6 +66,13 @@ export class PointCloudRenderer {
         };
     }
 
+    setColorProfile(profile) {
+        const gl = this.gl;
+        gl.useProgram(this.program);
+        gl.uniform1i(this.uniforms.colorProfile, profile);
+        
+    }
+
     initShaders() {
         try {
             const gl = this.gl;
@@ -108,7 +115,8 @@ export class PointCloudRenderer {
                 pointSize: gl.getUniformLocation(this.program, 'uPointSize'),
                 viewMode: gl.getUniformLocation(this.program, 'uViewMode'),
                 nearPlane: gl.getUniformLocation(this.program, 'uNearPlane'),
-                farPlane: gl.getUniformLocation(this.program, 'uFarPlane')
+                farPlane: gl.getUniformLocation(this.program, 'uFarPlane'),
+                colorProfile: gl.getUniformLocation(this.program,'uColorProfile')
             };
     
             // Validate required uniforms
@@ -484,7 +492,7 @@ export class PointCloudRenderer {
             gl.uniform1f(this.uniforms.pointSize, this.pointSize);
             gl.uniform1i(this.uniforms.viewMode, this.viewMode);
             gl.uniform1f(this.uniforms.nearPlane, 0.1);
-            gl.uniform1f(this.uniforms.farPlane, 1000.0);
+            gl.uniform1f(this.uniforms.farPlane, 10.0);
     
             // Update frustum and get visible points
             if (!this.frustum) {

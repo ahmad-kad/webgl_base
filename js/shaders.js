@@ -24,6 +24,7 @@ export const SHADERS = {
             }
         `
     },
+
     point: {
         vertex: `
             attribute vec3 aPosition;
@@ -65,6 +66,55 @@ export const SHADERS = {
             uniform float uNearPlane;
             uniform float uFarPlane;
             uniform int uViewMode;
+            uniform int uColorProfile;
+            
+            // Turbo colormap function
+            vec3 turbo(float t) {
+                const vec3 h = vec3(0.7858, 0.8320, 0.8828);
+                const vec3 a = vec3(1.9743, 2.0574, 1.8304);
+                const vec3 b = vec3(-1.2661, -1.7715, -1.5430);
+                const vec3 c = vec3(0.2039, 0.0883, 0.1934);
+                return clamp(h + a * cos(6.28318 * (b * t + c)), 0.0, 1.0);
+            }
+            
+            // Viridis colormap approximation
+            vec3 viridis(float t) {
+                const vec3 c0 = vec3(0.2777, 0.0048, 0.2899);
+                const vec3 c1 = vec3(0.1056, 0.5767, 0.4016);
+                const vec3 c2 = vec3(0.8352, 0.2302, 0.1935);
+                return c0 + c1 * cos(6.28318 * (c2 * t + vec3(0.0, 0.1, 0.2)));
+            }
+            
+            // Inferno colormap approximation
+            vec3 inferno(float t) {
+                const vec3 c0 = vec3(0.0002, 0.0016, 0.0139);
+                const vec3 c1 = vec3(0.7873, 0.3372, 0.2361);
+                const vec3 c2 = vec3(0.2354, 0.4869, 0.9918);
+                return c0 + c1 * cos(6.28318 * (c2 * t + vec3(0.0, 0.1, 0.2)));
+            }
+            
+            // Jet colormap approximation
+            vec3 jet(float t) {
+                return vec3(
+                    1.5 - abs(4.0 * t - 3.0),
+                    1.5 - abs(4.0 * t - 2.0),
+                    1.5 - abs(4.0 * t - 1.0)
+                );
+            }
+    
+            vec3 depthToColor(float depth) {
+                // Normalize depth to 10 meters max
+                float normalizedDepth = clamp(depth / 10.0, 0.0, 1.0);
+                
+                // Invert so closer is brighter
+                normalizedDepth = 1.0 - normalizedDepth;
+                
+                // Select color profile based on uniform
+                if (uColorProfile == 0) return turbo(normalizedDepth);
+                if (uColorProfile == 1) return jet(normalizedDepth);
+                if (uColorProfile == 2) return viridis(normalizedDepth);
+                return inferno(normalizedDepth); // Profile 3
+            }
             
             void main() {
                 // Discard pixels outside point circle
@@ -75,13 +125,11 @@ export const SHADERS = {
                 
                 vec4 finalColor;
                 
-                // View mode selection
                 if (uViewMode == 0) {
                     finalColor = vec4(vColor, 1.0); // RGB mode
                 } 
                 else if (uViewMode == 1) {
-                    float depth = (vDepth - uNearPlane) / (uFarPlane - uNearPlane);
-                    finalColor = vec4(vec3(1.0 - depth), 1.0); // Depth mode
+                    finalColor = vec4(depthToColor(vDepth), 1.0); // Enhanced depth mode
                 } 
                 else if (uViewMode == 2) {
                     finalColor = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0); // Normal mode
@@ -94,7 +142,7 @@ export const SHADERS = {
                         float dx = dFdx(vDepth);
                         float dy = dFdy(vDepth);
                         float edgeStrength = length(vec2(dx, dy));
-                        finalColor = vec4(vec3(1.0 - edgeStrength * 10.0), 1.0); // Edge detection
+                        finalColor = vec4(vec3(1.0 - edgeStrength * 10.0), 1.0);
                     #else
                         finalColor = vec4(vColor, 1.0);
                     #endif
@@ -107,7 +155,7 @@ export const SHADERS = {
             }
         `
     },
-
+    
     mesh: {
         vertex: `
             attribute vec3 aPosition;

@@ -14,6 +14,13 @@ export class ViewerControls {
             { name: 'Curvature', value: 3 },
             { name: 'Edge', value: 4 }
         ];
+
+        this.colorProfiles = [
+            { name: 'Turbo', value: 0 },
+            { name: 'Jet', value: 1 },
+            { name: 'Viridis', value: 2 },
+            { name: 'Inferno', value: 3 }
+        ];
         
         try {
             this.addStyles();
@@ -270,11 +277,15 @@ export class ViewerControls {
         const group = document.createElement('div');
         group.className = 'control-group';
         
-        // View mode label and selector
+        // Create view mode section
+        const viewModeSection = document.createElement('div');
+        viewModeSection.className = 'control-section';
+        
         const viewModeLabel = document.createElement('label');
         viewModeLabel.textContent = 'View Mode';
         
         const viewModeSelect = document.createElement('select');
+        viewModeSelect.className = 'control-select';
         this.viewModes.forEach(mode => {
             const option = document.createElement('option');
             option.value = mode.value;
@@ -282,11 +293,44 @@ export class ViewerControls {
             viewModeSelect.appendChild(option);
         });
         
-        // Render mode toggle
+        viewModeSection.appendChild(viewModeLabel);
+        viewModeSection.appendChild(viewModeSelect);
+        
+        // Create color profile section
+        const colorProfileSection = document.createElement('div');
+        colorProfileSection.className = 'control-section color-profile-section';
+        // Initially hidden
+        colorProfileSection.style.display = 'none';
+        
+        const colorProfileLabel = document.createElement('label');
+        colorProfileLabel.textContent = 'Depth Color Profile';
+        
+        const colorProfileSelect = document.createElement('select');
+        colorProfileSelect.className = 'control-select';
+        [
+            { name: 'Turbo', value: 0 },
+            { name: 'Jet', value: 1 },
+            { name: 'Viridis', value: 2 },
+            { name: 'Inferno', value: 3 }
+        ].forEach(profile => {
+            const option = document.createElement('option');
+            option.value = profile.value;
+            option.textContent = profile.name;
+            colorProfileSelect.appendChild(option);
+        });
+        
+        colorProfileSection.appendChild(colorProfileLabel);
+        colorProfileSection.appendChild(colorProfileSelect);
+    
+        // Create render mode section
+        const renderModeSection = document.createElement('div');
+        renderModeSection.className = 'control-section';
+        
         const renderModeLabel = document.createElement('label');
         renderModeLabel.textContent = 'Render Mode';
         
         const renderModeSelect = document.createElement('select');
+        renderModeSelect.className = 'control-select';
         ['Points', 'Mesh', 'Wireframe'].forEach(mode => {
             const option = document.createElement('option');
             option.value = mode.toLowerCase();
@@ -294,31 +338,81 @@ export class ViewerControls {
             renderModeSelect.appendChild(option);
         });
         
+        renderModeSection.appendChild(renderModeLabel);
+        renderModeSection.appendChild(renderModeSelect);
+        
+        // Add event listeners
         viewModeSelect.addEventListener('change', (e) => {
             const value = parseInt(e.target.value);
-            if (!isNaN(value)) {
-                this.renderer.setViewMode(value);
-            }
+            this.renderer.setViewMode(value);
+            // Show color profile selector only in depth view mode (mode 1)
+            colorProfileSection.style.display = value === 1 ? 'block' : 'none';
+        });
+        
+        colorProfileSelect.addEventListener('change', (e) => {
+            const value = parseInt(e.target.value);
+            this.renderer.setColorProfile?.(value); // Optional chaining in case method isn't implemented
         });
         
         renderModeSelect.addEventListener('change', (e) => {
             const mode = e.target.value;
-            this.renderer.setRenderMode(mode);
             if (mode === 'wireframe') {
                 this.renderer.setWireframe(true);
                 this.renderer.setRenderMode('mesh');
             } else {
                 this.renderer.setWireframe(false);
+                this.renderer.setRenderMode(mode);
             }
         });
         
-        group.appendChild(viewModeLabel);
-        group.appendChild(viewModeSelect);
-        group.appendChild(renderModeLabel);
-        group.appendChild(renderModeSelect);
+        // Add sections to group
+        group.appendChild(viewModeSection);
+        group.appendChild(colorProfileSection);
+        group.appendChild(renderModeSection);
+        
+        // Add styles
+        const styles = `
+            .control-section {
+                margin-bottom: 15px;
+            }
+            
+            .control-section:last-child {
+                margin-bottom: 0;
+            }
+            
+            .color-profile-section {
+                padding: 10px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                margin: 10px 0;
+            }
+            
+            .control-select {
+                width: 100%;
+                padding: 8px;
+                background: #444;
+                border: 1px solid #666;
+                border-radius: 4px;
+                color: white;
+                margin-top: 5px;
+            }
+            
+            .control-select:focus {
+                outline: none;
+                border-color: #888;
+            }
+        `;
+        
+        // Add styles if they don't exist
+        if (!document.getElementById('view-mode-control-styles')) {
+            const styleSheet = document.createElement('style');
+            styleSheet.id = 'view-mode-control-styles';
+            styleSheet.textContent = styles;
+            document.head.appendChild(styleSheet);
+        }
+        
         return group;
     }
-
     createPointSizeControl() {
         const group = document.createElement('div');
         group.className = 'control-group';
@@ -374,11 +468,9 @@ export class ViewerControls {
         const controls = document.querySelector('.viewer-controls');
         if (!controls) return;
 
-        // Get viewport dimensions
         const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
         
-        // Calculate maximum height for the scrollable area
-        const maxHeight = Math.max(vh * 0.8, 400); // At least 400px or 80% of viewport height
+        const maxHeight = Math.max(vh * 0.8, 400);
         controls.style.maxHeight = `${maxHeight}px`;
     }
 
