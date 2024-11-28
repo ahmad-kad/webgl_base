@@ -229,9 +229,71 @@ export const SHADERS = {
     `},
 
     splat: {
-        vertex: ``,
+        vertex: `
+            attribute vec3 aPosition;      // Vertex position
+            attribute vec4 aColor;         // Vertex color
+            attribute vec4 aRotation;      // Quaternion (x, y, z, w)
+            attribute vec3 aScale;         // Ellipsoid scaling factors
 
-        fragment: ``
+            uniform mat4 uModelViewMatrix; // Model-view transformation matrix
+            uniform mat4 uProjectionMatrix; // Projection matrix
+            uniform float uPointSize;      // Point size
+
+            varying vec4 vColor;
+
+            vec3 applyQuaternion(vec3 pos, vec4 q) {
+                // Apply quaternion rotation
+                vec3 u = vec3(q.x, q.y, q.z);
+                float s = q.w;
+
+                // Rodrigues' rotation formula
+                return 2.0 * dot(u, pos) * u
+                     + (s * s - dot(u, u)) * pos
+                     + 2.0 * s * cross(u, pos);
+            }
+
+            void main() {
+                // Apply ellipsoid scaling
+                vec3 scaledPosition = aPosition * aScale;
+
+                // Apply quaternion rotation
+                vec3 rotatedPosition = applyQuaternion(scaledPosition, aRotation);
+
+                // Transform to model-view space
+                vec4 mvPosition = uModelViewMatrix * vec4(rotatedPosition, 1.0);
+
+                // Pass color to fragment shader
+                vColor = aColor;
+
+                // Final position in clip space
+                gl_Position = uProjectionMatrix * mvPosition;
+
+                // Set point size
+                gl_PointSize = uPointSize;
+            }
+        `,
+        fragment: `
+            precision highp float;
+
+            uniform int uViewMode; // For potential visualization modes
+
+            varying vec4 vColor;
+
+            void main() {
+                // Compute normalized distance from the center of the splat
+                vec2 uv = gl_PointCoord.xy * 2.0 - 1.0; // Map [0, 1] to [-1, 1]
+                float radius = dot(uv, uv);             // Squared distance from the center
+
+                // Gaussian falloff
+                float alpha = exp(-radius * 5.0); // Adjust falloff scale (5.0 is arbitrary)
+
+                // Final color with alpha
+                gl_FragColor = vec4(vColor.rgb, vColor.a * alpha);
+
+                // Discard fragments with negligible alpha
+                if (alpha < 0.01) discard;
+            }
+        `
     }
 };
 

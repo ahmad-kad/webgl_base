@@ -484,7 +484,7 @@ export class PLYLoader {
 
                     // Store scale properties
                     if (propName === 'scale_0' || propName === 'scale_1' || propName === 'scale_2') {
-                        scale.push(value);
+                        scale.push(Math.exp(value));
                     }
 
                     // Store rotation properties

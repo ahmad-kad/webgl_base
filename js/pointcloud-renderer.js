@@ -244,7 +244,43 @@ export class PointCloudRenderer {
 
     initSplatShaders() {
         try {
-            //TODO:
+            const gl = this.gl;
+
+            // Create and compile shaders
+            const vertexShader = this.createShader(gl.VERTEX_SHADER, SHADERS.splat.vertex);
+            const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, SHADERS.splat.fragment);
+
+            if (!vertexShader || !fragmentShader) {
+                throw new Error('Failed to create splat shaders');
+            }
+
+            // Create program
+            this.splatProgram = gl.createProgram();
+            gl.attachShader(this.splatProgram, vertexShader);
+            gl.attachShader(this.splatProgram, fragmentShader);
+            gl.linkProgram(this.splatProgram);
+
+            if (!gl.getProgramParameter(this.splatProgram, gl.LINK_STATUS)) {
+                const info = gl.getProgramInfoLog(this.splatProgram);
+                throw new Error('Could not link splat program. \n\n' + info);
+            }
+
+            // Get splat attributes
+            this.splatAttributes = {
+                position: gl.getAttribLocation(this.splatProgram, 'aPosition'),
+                //normal: gl.getAttribLocation(this.splatProgram, 'aNormal'),
+                color: gl.getAttribLocation(this.splatProgram, 'aColor'),
+                scale: gl.getAttribLocation(this.splatProgram, 'aScale'),
+                rotation: gl.getAttribLocation(this.splatProgram, 'aRotation')
+            };
+
+            this.splatUniforms = {
+                projection: gl.getUniformLocation(this.splatProgram, 'uProjectionMatrix'),
+                modelView: gl.getUniformLocation(this.splatProgram, 'uModelViewMatrix'),
+                //pointSize: gl.getUniformLocation(this.splatProgram, 'uPointSize'),
+                viewMode: gl.getUniformLocation(this.splatProgram, 'uViewMode'),
+            };
+
             return true;
         } catch (error) {
             console.error('Error initializing splat shaders:', error);
@@ -1066,17 +1102,54 @@ export class PointCloudRenderer {
 
     drawSplats(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
         if (!this.splatProgram || !this.splatUniforms || !this.splatAttributes) {
             return;
         }
 
         try {
-            // TODO: 
+            gl.useProgram(this.splatProgram);
+
+            // Calculate normal matrix
+            const normalMatrix = mat4.create();
+            mat4.invert(normalMatrix, modelViewMatrix);
+            mat4.transpose(normalMatrix, normalMatrix);
+
+            // Set uniforms
+            gl.uniformMatrix4fv(this.splatUniforms.projection, false, projectionMatrix);
+            gl.uniformMatrix4fv(this.splatUniforms.modelView, false, modelViewMatrix);
+            gl.uniform1i(this.splatUniforms.viewMode, this.viewMode);
+
+            // Bind attributes
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+            gl.enableVertexAttribArray(this.splatAttributes.position);
+            gl.vertexAttribPointer(this.splatAttributes.position, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
+            gl.enableVertexAttribArray(this.splatAttributes.color);
+            gl.vertexAttribPointer(this.splatAttributes.color, 4, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.scale);
+            gl.enableVertexAttribArray(this.splatAttributes.scale);
+            gl.vertexAttribPointer(this.splatAttributes.scale, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.rotation);
+            gl.enableVertexAttribArray(this.splatAttributes.rotation);
+            gl.vertexAttribPointer(this.splatAttributes.rotation, 4, gl.FLOAT, false, 0, 0);
+
+            // Draw splats
+            gl.drawArrays(gl.POINTS, 0, this.vertexCount);
         } catch (error) {
             console.error('Error in drawSplats:', error);
         } finally {
             // Cleanup
+            gl.disableVertexAttribArray(this.splatAttributes.position);
+            gl.disableVertexAttribArray(this.splatAttributes.normal);
+            gl.disableVertexAttribArray(this.splatAttributes.color);
+            gl.disableVertexAttribArray(this.splatAttributes.scale);
+            gl.disableVertexAttribArray(this.splatAttributes.rotation);
         }
     }
 

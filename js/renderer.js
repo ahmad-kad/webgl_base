@@ -11,7 +11,9 @@ class Renderer {
 
     initializeWebGL() {
         this.canvas = document.querySelector('#glCanvas');
-        this.gl = this.canvas.getContext('webgl');
+        this.gl = this.canvas.getContext("webgl2", {
+            antialias: false,
+        });
 
         if (!this.gl) {
             alert('Unable to initialize WebGL. Your browser may not support it.');
