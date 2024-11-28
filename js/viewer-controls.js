@@ -3,10 +3,10 @@ export class ViewerControls {
         if (!renderer) {
             throw new Error('ViewerControls requires a renderer instance');
         }
-        
+
         this.renderer = renderer;
         this.xrControls = null;
-        
+
         this.viewModes = [
             { name: 'RGB', value: 0 },
             { name: 'Depth', value: 1 },
@@ -21,13 +21,13 @@ export class ViewerControls {
             { name: 'Viridis', value: 2 },
             { name: 'Inferno', value: 3 }
         ];
-        
+
         try {
             this.addStyles();
             this.setupUI();
             this.setupXRInteractions();
             this.setupResponsiveScaling();
-            
+
             console.log('ViewerControls initialized successfully');
         } catch (error) {
             console.error('Error setting up viewer controls:', error);
@@ -44,21 +44,21 @@ export class ViewerControls {
 
         const container = document.createElement('div');
         container.className = 'viewer-controls';
-        
+
         // Create a scrollable wrapper
         const scrollWrapper = document.createElement('div');
         scrollWrapper.className = 'viewer-controls-scroll';
-        
+
         // File loader
         scrollWrapper.appendChild(this.createFileLoader());
         // Octree Controls
         scrollWrapper.appendChild(this.createOctreeControls());
         // Camera controls info
         scrollWrapper.appendChild(this.createCameraInfo());
-        
+
         // View mode selector
         scrollWrapper.appendChild(this.createViewModeControl());
-        
+
         // Point size control
         scrollWrapper.appendChild(this.createPointSizeControl());
 
@@ -82,7 +82,7 @@ export class ViewerControls {
 
         // Get viewport dimensions
         const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-        
+
         // Calculate maximum height for the scrollable area
         const maxHeight = Math.max(vh * 0.8, 400); // At least 400px or 80% of viewport height
         controls.style.maxHeight = `${maxHeight}px`;
@@ -93,51 +93,51 @@ export class ViewerControls {
     createFileLoader() {
         const group = document.createElement('div');
         group.className = 'control-group';
-        
+
         const label = document.createElement('label');
         label.textContent = 'Load PLY File';
-        
+
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = '.ply';  // Only accept PLY files for now
         fileInput.style.display = 'none';
-        
+
         const button = document.createElement('button');
         button.textContent = 'Choose PLY File';
         button.className = 'file-button';
-        
+
         const fileInfo = document.createElement('div');
         fileInfo.className = 'file-info';
         fileInfo.textContent = 'Select a PLY file to load';
-        
+
         button.addEventListener('click', () => {
             fileInput.click();
         });
-        
+
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            
+
             if (!file.name.toLowerCase().endsWith('.ply')) {
                 fileInfo.textContent = 'Please select a PLY file';
                 return;
             }
-            
+
             fileInfo.textContent = `Loading: ${file.name}`;
             button.disabled = true;
-            
+
             try {
                 const reader = new FileReader();
                 reader.onload = async (event) => {
                     try {
                         // Create a URL for the file
                         const url = URL.createObjectURL(new Blob([event.target.result]));
-                        
+
                         // Load the PLY file
                         await this.renderer.loadPLY(url);
-                        
+
                         fileInfo.textContent = `Loaded: ${file.name}`;
-                        
+
                         // Clean up the URL
                         URL.revokeObjectURL(url);
                     } catch (error) {
@@ -147,15 +147,15 @@ export class ViewerControls {
                         button.disabled = false;
                     }
                 };
-                
+
                 reader.onerror = () => {
                     fileInfo.textContent = 'Error reading file';
                     button.disabled = false;
                 };
-                
+
                 // Read as ArrayBuffer
                 reader.readAsArrayBuffer(file);
-                
+
             } catch (error) {
                 console.error('Error processing file:', error);
                 fileInfo.textContent = `Error: ${error.message}`;
@@ -167,17 +167,17 @@ export class ViewerControls {
         group.appendChild(button);
         group.appendChild(fileInfo);
         group.appendChild(fileInput);
-        
+
         return group;
     }
 
     createCameraInfo() {
         const group = document.createElement('div');
         group.className = 'control-group camera-info';
-        
+
         const label = document.createElement('label');
         label.textContent = 'Camera Controls';
-        
+
         const controls = document.createElement('div');
         controls.className = 'camera-controls-info';
         controls.innerHTML = `
@@ -201,7 +201,7 @@ export class ViewerControls {
                 <strong>Reset Camera:</strong> F Key or Double Click
             </div>
         `;
-        
+
         // Add additional styles for the sub-info
         const style = document.createElement('style');
         style.textContent = `
@@ -231,7 +231,7 @@ export class ViewerControls {
             }
         `;
         document.head.appendChild(style);
-        
+
         group.appendChild(label);
         group.appendChild(controls);
         return group;
@@ -240,50 +240,50 @@ export class ViewerControls {
     createOctreeControls() {
         const group = document.createElement('div');
         group.className = 'control-group';
-        
+
         const label = document.createElement('label');
         label.textContent = 'Octree Visualization';
-        
+
         // Single toggle container
         const toggleContainer = document.createElement('div');
         toggleContainer.className = 'toggle-container';
-        
+
         const toggleLabel = document.createElement('span');
         toggleLabel.textContent = 'Show Octree';
-        
+
         const toggle = document.createElement('input');
         toggle.type = 'checkbox';
         toggle.id = 'octreeToggle';
         toggle.checked = this.renderer.useOctree && this.renderer.showOctreeDebug;
-        
+
         // Single event listener to control both features
         toggle.addEventListener('change', (e) => {
             const isEnabled = e.target.checked;
             this.renderer.useOctree = isEnabled;
             this.renderer.showOctreeDebug = isEnabled;
         });
-        
+
         // Assemble the container
         toggleContainer.appendChild(toggleLabel);
         toggleContainer.appendChild(toggle);
-        
+
         group.appendChild(label);
         group.appendChild(toggleContainer);
-        
+
         return group;
     }
 
     createViewModeControl() {
         const group = document.createElement('div');
         group.className = 'control-group';
-        
+
         // Create view mode section
         const viewModeSection = document.createElement('div');
         viewModeSection.className = 'control-section';
-        
+
         const viewModeLabel = document.createElement('label');
         viewModeLabel.textContent = 'View Mode';
-        
+
         const viewModeSelect = document.createElement('select');
         viewModeSelect.className = 'control-select';
         this.viewModes.forEach(mode => {
@@ -292,19 +292,19 @@ export class ViewerControls {
             option.textContent = mode.name;
             viewModeSelect.appendChild(option);
         });
-        
+
         viewModeSection.appendChild(viewModeLabel);
         viewModeSection.appendChild(viewModeSelect);
-        
+
         // Create color profile section
         const colorProfileSection = document.createElement('div');
         colorProfileSection.className = 'control-section color-profile-section';
         // Initially hidden
         colorProfileSection.style.display = 'none';
-        
+
         const colorProfileLabel = document.createElement('label');
         colorProfileLabel.textContent = 'Depth Color Profile';
-        
+
         const colorProfileSelect = document.createElement('select');
         colorProfileSelect.className = 'control-select';
         [
@@ -318,29 +318,29 @@ export class ViewerControls {
             option.textContent = profile.name;
             colorProfileSelect.appendChild(option);
         });
-        
+
         colorProfileSection.appendChild(colorProfileLabel);
         colorProfileSection.appendChild(colorProfileSelect);
-    
+
         // Create render mode section
         const renderModeSection = document.createElement('div');
         renderModeSection.className = 'control-section';
-        
+
         const renderModeLabel = document.createElement('label');
         renderModeLabel.textContent = 'Render Mode';
-        
+
         const renderModeSelect = document.createElement('select');
         renderModeSelect.className = 'control-select';
-        ['Points', 'Mesh', 'Wireframe'].forEach(mode => {
+        ['Points', 'Mesh', 'Wireframe', 'Splat'].forEach(mode => {
             const option = document.createElement('option');
             option.value = mode.toLowerCase();
             option.textContent = mode;
             renderModeSelect.appendChild(option);
         });
-        
+
         renderModeSection.appendChild(renderModeLabel);
         renderModeSection.appendChild(renderModeSelect);
-        
+
         // Add event listeners
         viewModeSelect.addEventListener('change', (e) => {
             const value = parseInt(e.target.value);
@@ -348,12 +348,12 @@ export class ViewerControls {
             // Show color profile selector only in depth view mode (mode 1)
             colorProfileSection.style.display = value === 1 ? 'block' : 'none';
         });
-        
+
         colorProfileSelect.addEventListener('change', (e) => {
             const value = parseInt(e.target.value);
             this.renderer.setColorProfile?.(value); // Optional chaining in case method isn't implemented
         });
-        
+
         renderModeSelect.addEventListener('change', (e) => {
             const mode = e.target.value;
             if (mode === 'wireframe') {
@@ -364,12 +364,12 @@ export class ViewerControls {
                 this.renderer.setRenderMode(mode);
             }
         });
-        
+
         // Add sections to group
         group.appendChild(viewModeSection);
         group.appendChild(colorProfileSection);
         group.appendChild(renderModeSection);
-        
+
         // Add styles
         const styles = `
             .control-section {
@@ -402,7 +402,7 @@ export class ViewerControls {
                 border-color: #888;
             }
         `;
-        
+
         // Add styles if they don't exist
         if (!document.getElementById('view-mode-control-styles')) {
             const styleSheet = document.createElement('style');
@@ -410,19 +410,19 @@ export class ViewerControls {
             styleSheet.textContent = styles;
             document.head.appendChild(styleSheet);
         }
-        
+
         return group;
     }
     createPointSizeControl() {
         const group = document.createElement('div');
         group.className = 'control-group';
-        
+
         const label = document.createElement('label');
         label.textContent = 'Point Size';
-        
+
         const pointSizeContainer = document.createElement('div');
         pointSizeContainer.className = 'point-size-container';
-        
+
         const slider = document.createElement('input');
         slider.type = 'range';
         slider.id = 'pointSizeSlider';
@@ -430,10 +430,10 @@ export class ViewerControls {
         slider.max = '10';
         slider.step = '0.1';
         slider.value = '1';
-        
+
         const value = document.createElement('span');
         value.textContent = '1.0';
-        
+
         slider.addEventListener('input', (e) => {
             try {
                 const size = parseFloat(e.target.value);
@@ -445,15 +445,15 @@ export class ViewerControls {
                 console.error('Error updating point size:', error);
             }
         });
-        
+
         pointSizeContainer.appendChild(slider);
         pointSizeContainer.appendChild(value);
-        
+
         group.appendChild(label);
         group.appendChild(pointSizeContainer);
         return group;
     }
-    
+
     setupResponsiveScaling() {
         // Initial scaling
         this.updateUIScale();
@@ -469,14 +469,14 @@ export class ViewerControls {
         if (!controls) return;
 
         const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-        
+
         const maxHeight = Math.max(vh * 0.8, 400);
         controls.style.maxHeight = `${maxHeight}px`;
     }
 
     addStyles() {
         const styleId = 'viewer-controls-styles';
-        
+
         // Remove existing styles if they exist
         const existingStyles = document.getElementById(styleId);
         if (existingStyles) {
@@ -631,7 +631,7 @@ export class ViewerControls {
             /* Keep all your existing styles below this line */
             ${this.getExistingStyles()}
         `;
-        
+
         document.head.appendChild(style);
     }
 
@@ -707,7 +707,7 @@ export class ViewerControls {
 
     handleGestureChange(e) {
         if (!this.activeControl) return;
-    
+
         if (this.activeControl.type === 'range') {
             // Handle slider movement
             let delta;
@@ -719,14 +719,14 @@ export class ViewerControls {
                 delta = (e.clientX - this.lastX) / 100;
                 this.lastX = e.clientX;
             }
-    
+
             if (delta) {
                 const range = this.activeControl.max - this.activeControl.min;
                 const newValue = parseFloat(this.activeControl.value) + (delta * range);
-                
+
                 // Update slider value
                 this.activeControl.value = Math.min(Math.max(newValue, this.activeControl.min), this.activeControl.max);
-                
+
                 // Update point size
                 if (this.activeControl.id === 'pointSizeSlider') {
                     this.renderer.setPointSize(parseFloat(this.activeControl.value));
@@ -742,10 +742,10 @@ export class ViewerControls {
             const rotationDelta = e.rotation;
             if (Math.abs(rotationDelta) > 45) { // Threshold for view mode change
                 const currentIndex = this.activeControl.selectedIndex;
-                const newIndex = rotationDelta > 0 ? 
+                const newIndex = rotationDelta > 0 ?
                     (currentIndex + 1) % this.activeControl.options.length :
                     (currentIndex - 1 + this.activeControl.options.length) % this.activeControl.options.length;
-                
+
                 this.activeControl.selectedIndex = newIndex;
                 this.renderer.setViewMode(parseInt(this.activeControl.value));
             }
@@ -761,12 +761,12 @@ export class ViewerControls {
     handleControllerIntersection(element, controller) {
         const prevHover = document.querySelector('.xr-hover');
         if (prevHover) prevHover.classList.remove('xr-hover');
-        
+
         const controlGroup = element.closest('.control-group');
         if (controlGroup) {
             controlGroup.classList.add('xr-hover');
         }
-    
+
         if (controller.buttons[0].pressed) { // Trigger button
             if (element.type === 'range') {
                 // Handle slider
@@ -774,7 +774,7 @@ export class ViewerControls {
                 const percentage = (controller.position.x - rect.left) / rect.width;
                 const newValue = element.min + (percentage * (element.max - element.min));
                 element.value = Math.min(Math.max(newValue, element.min), element.max);
-                
+
                 if (element.id === 'pointSizeSlider') {
                     this.renderer.setPointSize(parseFloat(element.value));
                 }
@@ -796,7 +796,7 @@ export class ViewerControls {
             console.log('WebXR not supported');
             return;
         }
-        
+
         try {
             const isSupported = await navigator.xr.isSessionSupported('immersive-vr');
             if (isSupported) {
@@ -805,7 +805,7 @@ export class ViewerControls {
         } catch (error) {
             console.error('Error checking VR support:', error);
         }
-        
+
         // Add VR button anyway to show unsupported state
         this.addVRButton();
     }
@@ -850,14 +850,14 @@ export class ViewerControls {
 
     async handleVRButtonClick(button, statusIndicator) {
         if (!this.xrControls) return;
-    
+
         try {
             if (!this.xrControls.xrSession) {
                 button.disabled = true;
                 statusIndicator.textContent = 'Starting VR...';
-                
+
                 await this.xrControls.startXRSession();
-                
+
                 button.innerHTML = `
                     <svg class="vr-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="currentColor"/>
@@ -867,7 +867,7 @@ export class ViewerControls {
                 statusIndicator.textContent = 'VR Active';
                 statusIndicator.classList.add('active');
                 document.body.classList.add('vr-mode');
-                
+
             } else {
                 await this.xrControls.xrSession.end();
             }

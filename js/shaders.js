@@ -155,7 +155,7 @@ export const SHADERS = {
             }
         `
     },
-    
+
     mesh: {
         vertex: `
             attribute vec3 aPosition;
@@ -226,7 +226,13 @@ export const SHADERS = {
                 
                 gl_FragColor = finalColor;
             }
-        `}
+    `},
+
+    splat: {
+        vertex: ``,
+
+        fragment: ``
+    }
 };
 
 export const DEBUG_SHADERS = {

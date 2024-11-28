@@ -11,19 +11,19 @@ export class PointCloudRenderer {
         this.octree = null;
 
         this.useOctree = true;
-        this.showOctreeDebug = true; 
+        this.showOctreeDebug = true;
 
         console.log('Initializing PointCloudRenderer with WebGL 1');
-        
+
         // Initialize bounds first
         this.bounds = {
             min: { x: Infinity, y: Infinity, z: Infinity },
             max: { x: -Infinity, y: -Infinity, z: -Infinity }
         };
-    
+
         // Initialize ModelLoader
         this.modelLoader = new ModelLoader();
-        
+
         // Initialize propertySizes map
         this.propertySizes = new Map([
             ['char', 1], ['uchar', 1],
@@ -31,25 +31,26 @@ export class PointCloudRenderer {
             ['int', 4], ['uint', 4],
             ['float', 4], ['double', 8]
         ]);
-        
+
         this.initBuffers();
         const shadersInitialized = this.initShaders();
         const meshShadersInitialized = this.initMeshShaders();
-        const debugShadersInitialized = this.initDebugShaders(); 
-    
-        
-        if (!shadersInitialized || !meshShadersInitialized || !debugShadersInitialized) {
+        const debugShadersInitialized = this.initDebugShaders();
+        const splatShadersInitialized = this.initSplatShaders();
+
+
+        if (!shadersInitialized || !meshShadersInitialized || !debugShadersInitialized || !splatShadersInitialized) {
             console.error('Failed to initialize shaders');
             return;
         }
-    
-        
+
+
         this.viewMode = 0;
         this.pointSize = 5.0;
         this.vertexCount = 0;
         this.renderMode = 'points';
         this.wireframe = false;
-        
+
         // Get WebGL 1 extension for 32-bit indices
         this.uint32Indices = gl.getExtension('OES_element_index_uint');
         console.log('32-bit indices ' + (this.uint32Indices ? 'enabled' : 'not available'));
@@ -62,7 +63,9 @@ export class PointCloudRenderer {
             color: this.gl.createBuffer(),
             curvature: this.gl.createBuffer(),
             indices: this.gl.createBuffer(),
-            texCoords: this.gl.createBuffer()
+            texCoords: this.gl.createBuffer(),
+            scale: this.gl.createBuffer(),
+            rotation: this.gl.createBuffer()
         };
     }
 
@@ -70,31 +73,31 @@ export class PointCloudRenderer {
         const gl = this.gl;
         gl.useProgram(this.program);
         gl.uniform1i(this.uniforms.colorProfile, profile);
-        
+
     }
 
     initShaders() {
         try {
             const gl = this.gl;
-    
+
             // Create shader program for points
             const vertexShader = this.createShader(gl.VERTEX_SHADER, SHADERS.point.vertex);
             const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, SHADERS.point.fragment);
-    
+
             if (!vertexShader || !fragmentShader) {
                 throw new Error('Failed to create shaders');
             }
-    
+
             this.program = gl.createProgram();
             gl.attachShader(this.program, vertexShader);
             gl.attachShader(this.program, fragmentShader);
             gl.linkProgram(this.program);
-    
+
             if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
                 const info = gl.getProgramInfoLog(this.program);
                 throw new Error('Could not link WebGL program. \n\n' + info);
             }
-    
+
             // Get attributes - IMPORTANT: These must match the shader exactly
             this.attributes = {
                 position: gl.getAttribLocation(this.program, 'aPosition'),
@@ -102,12 +105,12 @@ export class PointCloudRenderer {
                 color: gl.getAttribLocation(this.program, 'aColor'),
                 curvature: gl.getAttribLocation(this.program, 'aCurvature')
             };
-    
+
             // Validate required attributes
             if (this.attributes.position === -1) {
                 throw new Error('Could not find position attribute');
             }
-    
+
             // Get uniforms
             this.uniforms = {
                 modelView: gl.getUniformLocation(this.program, 'uModelViewMatrix'),
@@ -116,20 +119,19 @@ export class PointCloudRenderer {
                 viewMode: gl.getUniformLocation(this.program, 'uViewMode'),
                 nearPlane: gl.getUniformLocation(this.program, 'uNearPlane'),
                 farPlane: gl.getUniformLocation(this.program, 'uFarPlane'),
-                colorProfile: gl.getUniformLocation(this.program,'uColorProfile')
+                colorProfile: gl.getUniformLocation(this.program, 'uColorProfile')
             };
-    
+
             // Validate required uniforms
             if (!this.uniforms.modelView || !this.uniforms.projection || !this.uniforms.pointSize) {
                 throw new Error('Could not find required uniforms');
             }
-    
+
             console.log('Shader initialization successful', {
-                attributes: Object.entries(this.attributes).map(([name, location]) => 
-                    `${name}: ${location}`).join(', '),
-                uniforms: Object.keys(this.uniforms).join(', ')
+                attributes: this.attributes,
+                uniforms: this.uniforms,
             });
-    
+
             return true;
         } catch (error) {
             console.error('Error initializing shaders:', error);
@@ -140,25 +142,25 @@ export class PointCloudRenderer {
     initMeshShaders() {
         try {
             const gl = this.gl;
-    
+
             // Create shader program for mesh
             const vertexShader = this.createShader(gl.VERTEX_SHADER, SHADERS.mesh.vertex);
             const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, SHADERS.mesh.fragment);
-    
+
             if (!vertexShader || !fragmentShader) {
                 throw new Error('Failed to create mesh shaders');
             }
-    
+
             this.meshProgram = gl.createProgram();
             gl.attachShader(this.meshProgram, vertexShader);
             gl.attachShader(this.meshProgram, fragmentShader);
             gl.linkProgram(this.meshProgram);
-    
+
             if (!gl.getProgramParameter(this.meshProgram, gl.LINK_STATUS)) {
                 const info = gl.getProgramInfoLog(this.meshProgram);
                 throw new Error('Could not link WebGL mesh program. \n\n' + info);
             }
-    
+
             // Get mesh attributes
             this.meshAttributes = {
                 position: gl.getAttribLocation(this.meshProgram, 'aPosition'),
@@ -166,12 +168,12 @@ export class PointCloudRenderer {
                 color: gl.getAttribLocation(this.meshProgram, 'aColor'),
                 texCoord: gl.getAttribLocation(this.meshProgram, 'aTexCoord')
             };
-    
+
             // Check if required attributes were found
             if (this.meshAttributes.position === -1) {
                 console.error('Could not find position attribute in mesh shader');
             }
-    
+
             // Get mesh uniforms
             this.meshUniforms = {
                 modelView: gl.getUniformLocation(this.meshProgram, 'uModelViewMatrix'),
@@ -182,14 +184,14 @@ export class PointCloudRenderer {
                 nearPlane: gl.getUniformLocation(this.meshProgram, 'uNearPlane'),
                 farPlane: gl.getUniformLocation(this.meshProgram, 'uFarPlane')
             };
-    
+
             // Check if required uniforms were found
-            if (this.meshUniforms.modelView === null || 
-                this.meshUniforms.projection === null || 
+            if (this.meshUniforms.modelView === null ||
+                this.meshUniforms.projection === null ||
                 this.meshUniforms.normalMatrix === null) {
                 throw new Error('Could not find required uniforms in mesh shader');
             }
-    
+
             return true;
         } catch (error) {
             console.error('Error initializing mesh shaders:', error);
@@ -200,42 +202,52 @@ export class PointCloudRenderer {
     initDebugShaders() {
         try {
             const gl = this.gl;
-            
+
             // Create and compile shaders
             const vertexShader = this.createShader(gl.VERTEX_SHADER, DEBUG_SHADERS.vertex);
             const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, DEBUG_SHADERS.fragment);
-            
+
             if (!vertexShader || !fragmentShader) {
                 throw new Error('Failed to create debug shaders');
             }
-            
+
             // Create program
             this.debugProgram = gl.createProgram();
             gl.attachShader(this.debugProgram, vertexShader);
             gl.attachShader(this.debugProgram, fragmentShader);
             gl.linkProgram(this.debugProgram);
-            
+
             if (!gl.getProgramParameter(this.debugProgram, gl.LINK_STATUS)) {
                 const info = gl.getProgramInfoLog(this.debugProgram);
                 throw new Error('Could not link debug program. \n\n' + info);
             }
-            
+
             // Get locations
             this.debugAttribs = {
                 position: gl.getAttribLocation(this.debugProgram, 'aPosition')
             };
-            
+
             this.debugUniforms = {
                 projection: gl.getUniformLocation(this.debugProgram, 'uProjectionMatrix'),
                 modelView: gl.getUniformLocation(this.debugProgram, 'uModelViewMatrix')
             };
-            
+
             // Create buffer for debug lines
             this.debugBuffer = gl.createBuffer();
-            
+
             return true;
         } catch (error) {
             console.error('Error initializing debug shaders:', error);
+            return false;
+        }
+    }
+
+    initSplatShaders() {
+        try {
+            //TODO:
+            return true;
+        } catch (error) {
+            console.error('Error initializing splat shaders:', error);
             return false;
         }
     }
@@ -245,7 +257,7 @@ export class PointCloudRenderer {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
         gl.compileShader(shader);
-    
+
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
             const info = gl.getShaderInfoLog(shader);
             console.error('Shader compilation error:', info);
@@ -253,7 +265,7 @@ export class PointCloudRenderer {
             gl.deleteShader(shader);
             return null;
         }
-    
+
         return shader;
     }
 
@@ -267,51 +279,65 @@ export class PointCloudRenderer {
 
     updateBuffers(data) {
         const gl = this.gl;
-        
+
+        // Validate incoming data
+        if (!data.vertices || data.vertices.length === 0) {
+            throw new Error('Vertices data is missing or empty.');
+        }
+
         // Store original data
-        this.originalVertices = data.vertices instanceof Float32Array ? 
+        this.originalVertices = data.vertices instanceof Float32Array ?
             data.vertices : new Float32Array(data.vertices);
-        this.originalNormals = data.normals instanceof Float32Array ? 
+        this.originalNormals = data.normals instanceof Float32Array ?
             data.normals : data.normals ? new Float32Array(data.normals) : null;
         this.originalColors = data.colors instanceof Float32Array ?
             data.colors : data.colors ? new Float32Array(data.colors) : new Float32Array(this.originalVertices.length).fill(1.0);
-                
+        this.originalScales = data.scales instanceof Float32Array ?
+            data.scales : data.scales ? new Float32Array(data.scales) : new Float32Array(this.originalVertices.length / 3).fill(1.0); // Default scale: 1.0
+        this.originalRotations = data.rotations instanceof Float32Array ?
+            data.rotations : data.rotations ? new Float32Array(data.rotations) : new Float32Array(this.originalVertices.length); // Default: identity rotations (empty)
+
         this.vertexCount = this.originalVertices.length / 3;
-    
+
         // Reset previous buffers
         Object.values(this.buffers).forEach(buffer => {
             if (buffer) gl.deleteBuffer(buffer);
         });
-        
+
         this.initBuffers();
-    
-        // Initialize buffers
+
+        // Upload vertices
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
         gl.bufferData(gl.ARRAY_BUFFER, this.originalVertices, gl.STATIC_DRAW);
-    
-        // Initialize normals
-        const normals = this.originalNormals || 
-            new Float32Array(this.originalVertices.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0);
+
+        // Upload normals (default to Y-axis if not provided)
+        const normals = this.originalNormals || new Float32Array(this.originalVertices.length).map((_, i) => (i % 3 === 1 ? 1 : 0));
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
         gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
-    
-        // Initialize colors - moved before octree creation
-        const colors = this.originalColors;
+
+        // Upload colors
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
-        gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
-    
-        // Initialize curvature
+        gl.bufferData(gl.ARRAY_BUFFER, this.originalColors, gl.STATIC_DRAW);
+
+        // Upload scales
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.scale);
+        gl.bufferData(gl.ARRAY_BUFFER, this.originalScales, gl.STATIC_DRAW);
+
+        // Upload rotations
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.rotation);
+        gl.bufferData(gl.ARRAY_BUFFER, this.originalRotations, gl.STATIC_DRAW);
+
+        // Upload curvature (default to zero)
         const curvature = new Float32Array(this.vertexCount).fill(0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.curvature);
         gl.bufferData(gl.ARRAY_BUFFER, curvature, gl.STATIC_DRAW);
-    
-        // Build octree
+
+        // Calculate bounds
         const bounds = {
             min: { x: Infinity, y: Infinity, z: Infinity },
             max: { x: -Infinity, y: -Infinity, z: -Infinity }
         };
-    
-        // Calculate bounds and build octree data
+
         for (let i = 0; i < this.originalVertices.length; i += 3) {
             bounds.min.x = Math.min(bounds.min.x, this.originalVertices[i]);
             bounds.min.y = Math.min(bounds.min.y, this.originalVertices[i + 1]);
@@ -320,22 +346,22 @@ export class PointCloudRenderer {
             bounds.max.y = Math.max(bounds.max.y, this.originalVertices[i + 1]);
             bounds.max.z = Math.max(bounds.max.z, this.originalVertices[i + 2]);
         }
-    
-        // Create octree
+
+        // Build octree
         const center = {
             x: (bounds.max.x + bounds.min.x) / 2,
             y: (bounds.max.y + bounds.min.y) / 2,
             z: (bounds.max.z + bounds.min.z) / 2
         };
+
         const size = Math.max(
             bounds.max.x - bounds.min.x,
             bounds.max.y - bounds.min.y,
             bounds.max.z - bounds.min.z
         ) / 2;
-    
+
         this.octree = new Octree(center, size);
-        
-        // Insert points into octree
+
         for (let i = 0; i < this.originalVertices.length; i += 3) {
             this.octree.insert({
                 x: this.originalVertices[i],
@@ -344,16 +370,26 @@ export class PointCloudRenderer {
                 index: i / 3
             });
         }
-    
+
+        // Debugging information
         console.log('Buffers initialized with:', {
             vertexCount: this.vertexCount,
             hasNormals: !!this.originalNormals,
             hasColors: !!this.originalColors,
+            hasScales: !!this.originalScales,
+            hasRotations: !!this.originalRotations,
             bufferSizes: {
                 vertices: this.originalVertices.length,
                 normals: normals.length,
-                colors: colors.length,
+                colors: this.originalColors.length,
+                scales: this.originalScales.length,
+                rotations: this.originalRotations.length,
                 curvature: curvature.length
+            },
+            bounds,
+            octree: {
+                center,
+                size
             }
         });
     }
@@ -362,25 +398,25 @@ export class PointCloudRenderer {
         try {
             let offset = header.headerLength;
             const littleEndian = header.format.includes('little_endian');
-            
+
             // Helper function to validate offset
             const validateOffset = (size) => {
                 if (offset + size > dataView.byteLength) {
                     throw new Error(`Buffer overflow at offset ${offset}, needs ${size} bytes`);
                 }
             };
-    
+
             // Read vertices
             for (let i = 0; i < header.numVertices; i++) {
                 for (const [propName, prop] of Object.entries(header.properties)) {
                     if (prop.isList) continue;
-    
+
                     const propSize = this.propertySizes.get(prop.type);
                     validateOffset(propSize);
-                    
+
                     const value = this.readProperty(dataView, offset, prop.type, littleEndian);
                     offset += propSize;
-    
+
                     if (propName === 'x' || propName === 'y' || propName === 'z') {
                         result.vertices.push(value);
                     } else if (propName === 'nx' || propName === 'ny' || propName === 'nz') {
@@ -390,7 +426,7 @@ export class PointCloudRenderer {
                     }
                 }
             }
-    
+
             // Read faces
             if (header.numFaces > 0) {
                 const faceProp = Object.values(header.properties).find(p => p.isList);
@@ -399,7 +435,7 @@ export class PointCloudRenderer {
                         validateOffset(this.propertySizes.get(faceProp.countType));
                         const vertexCount = this.readProperty(dataView, offset, faceProp.countType, littleEndian);
                         offset += this.propertySizes.get(faceProp.countType);
-    
+
                         if (vertexCount >= 3) {
                             const indices = [];
                             for (let j = 0; j < vertexCount; j++) {
@@ -408,7 +444,7 @@ export class PointCloudRenderer {
                                 indices.push(index);
                                 offset += this.propertySizes.get(faceProp.type);
                             }
-    
+
                             // Triangulate face
                             for (let j = 1; j < vertexCount - 1; j++) {
                                 result.faces.push(indices[0], indices[j], indices[j + 1]);
@@ -417,14 +453,14 @@ export class PointCloudRenderer {
                     }
                 }
             }
-    
+
         } catch (error) {
             console.error('Error parsing binary data:', error);
             console.error('At offset:', offset);
             throw error;
         }
     }
-    
+
     // Update readProperty to handle endianness consistently
     readProperty(dataView, offset, type, littleEndian = true) {
         try {
@@ -447,19 +483,19 @@ export class PointCloudRenderer {
     bindAttributes() {
         const gl = this.gl;
         gl.useProgram(this.program);
-        
+
         // Bind position attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
         gl.enableVertexAttribArray(this.attributes.position);
         gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
-        
+
         // Bind normal attribute
         if (this.attributes.normal !== -1) {
             gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
             gl.enableVertexAttribArray(this.attributes.normal);
             gl.vertexAttribPointer(this.attributes.normal, 3, gl.FLOAT, false, 0, 0);
         }
-        
+
         // Bind color attribute
         if (this.attributes.color !== -1) {
             gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
@@ -477,15 +513,14 @@ export class PointCloudRenderer {
 
     drawPoints(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
-    
+
         if (!this.program || !this.uniforms || !this.attributes || !this.originalVertices) {
-            console.error('Cannot draw points: not properly initialized');
             return;
         }
-    
+
         try {
             gl.useProgram(this.program);
-    
+
             // Set uniforms
             gl.uniformMatrix4fv(this.uniforms.projection, false, projectionMatrix);
             gl.uniformMatrix4fv(this.uniforms.modelView, false, modelViewMatrix);
@@ -493,13 +528,13 @@ export class PointCloudRenderer {
             gl.uniform1i(this.uniforms.viewMode, this.viewMode);
             gl.uniform1f(this.uniforms.nearPlane, 0.1);
             gl.uniform1f(this.uniforms.farPlane, 10.0);
-    
+
             // Update frustum and get visible points
             if (!this.frustum) {
                 this.frustum = new Frustum();
             }
             this.frustum.update(projectionMatrix, modelViewMatrix);
-    
+
             // In drawPoints where we handle visible points
             if (this.octree && this.useOctree) {
                 const cameraPosition = [
@@ -508,17 +543,17 @@ export class PointCloudRenderer {
                     -modelViewMatrix[14]
                 ];
                 const visiblePoints = this.octree.queryFrustum(this.frustum, cameraPosition);
-                
+
                 if (visiblePoints.length > 0) {
                     const positions = new Float32Array(visiblePoints.length * 3);
-                    const colors = new Float32Array(visiblePoints.length * 3);  
-                    
+                    const colors = new Float32Array(visiblePoints.length * 3);
+
                     visiblePoints.forEach((point, i) => {
                         // Position
                         positions[i * 3] = point.x;
                         positions[i * 3 + 1] = point.y;
                         positions[i * 3 + 2] = point.z;
-                        
+
                         // Color - get from original color buffer or use default white
                         if (this.originalColors) {
                             const originalIndex = point.index * 3;
@@ -532,22 +567,22 @@ export class PointCloudRenderer {
                             colors[i * 3 + 2] = 1.0;
                         }
                     });
-            
+
                     // Update position buffer
                     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
                     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
                     gl.enableVertexAttribArray(this.attributes.position);
                     gl.vertexAttribPointer(this.attributes.position, 3, gl.FLOAT, false, 0, 0);
-            
+
                     // Update color buffer
                     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
                     gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
                     gl.enableVertexAttribArray(this.attributes.color);
                     gl.vertexAttribPointer(this.attributes.color, 3, gl.FLOAT, false, 0, 0);
-            
+
                     // Draw the points
                     gl.drawArrays(gl.POINTS, 0, visiblePoints.length);
-                    
+
                     // Draw octree debug visualization if enabled
                     if (this.showOctreeDebug) {
                         this.drawOctreeDebug(projectionMatrix, modelViewMatrix);
@@ -574,7 +609,7 @@ export class PointCloudRenderer {
             if (this.showOctreeDebug && this.octree) {
                 this.drawOctreeDebug(projectionMatrix, modelViewMatrix);
             }
-    
+
         } catch (error) {
             console.error('Error in drawPoints:', error);
         } finally {
@@ -588,26 +623,26 @@ export class PointCloudRenderer {
 
     bindMeshAttributes() {
         const gl = this.gl;
-        
+
         // Position attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
         gl.enableVertexAttribArray(this.meshAttributes.position);
         gl.vertexAttribPointer(this.meshAttributes.position, 3, gl.FLOAT, false, 0, 0);
-        
+
         // Normal attribute
         if (this.meshAttributes.normal !== -1) {
             gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
             gl.enableVertexAttribArray(this.meshAttributes.normal);
             gl.vertexAttribPointer(this.meshAttributes.normal, 3, gl.FLOAT, false, 0, 0);
         }
-        
+
         // Color attribute
         if (this.meshAttributes.color !== -1) {
             gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.color);
             gl.enableVertexAttribArray(this.meshAttributes.color);
             gl.vertexAttribPointer(this.meshAttributes.color, 3, gl.FLOAT, false, 0, 0);
         }
-        
+
         // Texture coordinate attribute
         if (this.meshAttributes.texCoord !== -1 && this.buffers.texCoords) {
             gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoords);
@@ -618,14 +653,14 @@ export class PointCloudRenderer {
 
     drawMesh(projectionMatrix, modelViewMatrix) {
         const gl = this.gl;
-        
+
         gl.useProgram(this.meshProgram);
-        
+
         // Calculate normal matrix
         const normalMatrix = mat4.create();
         mat4.invert(normalMatrix, modelViewMatrix);
         mat4.transpose(normalMatrix, normalMatrix);
-        
+
         // Set uniforms
         gl.uniformMatrix4fv(this.meshUniforms.projection, false, projectionMatrix);
         gl.uniformMatrix4fv(this.meshUniforms.modelView, false, modelViewMatrix);
@@ -634,16 +669,16 @@ export class PointCloudRenderer {
         gl.uniform1i(this.meshUniforms.wireframe, this.wireframe);
         gl.uniform1f(this.meshUniforms.nearPlane, 0.1);
         gl.uniform1f(this.meshUniforms.farPlane, 1000.0);
-        
+
         // Bind attributes
         this.bindMeshAttributes();
-        
+
         // Bind index buffer
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.indices);
-        
+
         // Choose index type based on extension support and vertex count
         const indexType = this.uint32Indices ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-        
+
         if (this.wireframe) {
             // Draw wireframe
             for (let i = 0; i < this.indexCount; i += 3) {
@@ -653,7 +688,7 @@ export class PointCloudRenderer {
             // Draw triangles
             gl.drawElements(gl.TRIANGLES, this.indexCount, indexType, 0);
         }
-        
+
         // Cleanup
         gl.disableVertexAttribArray(this.meshAttributes.position);
         gl.disableVertexAttribArray(this.meshAttributes.normal);
@@ -667,57 +702,69 @@ export class PointCloudRenderer {
         try {
             console.log('Starting PLY file load from:', filePath);
             const response = await fetch(filePath);
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const buffer = await response.arrayBuffer();
             console.log('Received PLY data, size:', buffer.byteLength);
-    
+
             const data = await this.modelLoader.loadFile(buffer, 'ply');
             console.log('Parsed PLY data:', {
                 vertexCount: data?.vertices?.length / 3,
                 hasNormals: !!data?.normals,
                 hasColors: !!data?.colors,
+                hasScales: !!data?.scales,
+                hasRotations: !!data?.rotations,
                 bounds: data?.bounds
             });
-    
+
             if (!data || !data.vertices || data.vertices.length === 0) {
                 throw new Error('No valid vertex data found in PLY file');
             }
-    
+
             // Convert data to typed arrays if needed
-            const vertices = data.vertices instanceof Float32Array ? 
+            const vertices = data.vertices instanceof Float32Array ?
                 data.vertices : new Float32Array(data.vertices);
-                
+
             const normals = data.normals instanceof Float32Array ?
                 data.normals : data.normals ? new Float32Array(data.normals) : null;
-                
+
             const colors = data.colors instanceof Float32Array ?
                 data.colors : data.colors ? new Float32Array(data.colors) : null;
-    
+
+            const scales = data.scales instanceof Float32Array ?
+                data.scales : data.scales ? new Float32Array(data.scales) : null;
+
+            const rotations = data.rotations instanceof Float32Array ?
+                data.rotations : data.rotations ? new Float32Array(data.rotations) : null;
+
             // Update buffers with the processed data
             this.updateBuffers({
                 vertices: vertices,
                 normals: normals,
-                colors: colors
+                colors: colors,
+                scales: scales,
+                rotations: rotations
             });
-    
+
             // Calculate bounds for camera positioning
             this.calculateBounds(vertices);
             this.vertexCount = vertices.length / 3;
-    
+
             console.log('Successfully loaded PLY with:', {
                 vertices: this.vertexCount,
                 bounds: this.bounds,
                 bufferSizes: {
                     vertices: vertices.length,
                     normals: normals?.length || 0,
-                    colors: colors?.length || 0
+                    colors: colors?.length || 0,
+                    scales: scales?.length || 0,
+                    rotations: rotations?.length || 0
                 }
             });
-    
+
             // Dispatch success event
             window.dispatchEvent(new CustomEvent('modelLoaded', {
                 detail: {
@@ -726,7 +773,7 @@ export class PointCloudRenderer {
                     bounds: this.bounds
                 }
             }));
-    
+
             return true;
         } catch (error) {
             console.error('Error loading PLY:', error);
@@ -742,7 +789,7 @@ export class PointCloudRenderer {
             this.calculateBounds(data.vertices);
             this.vertexCount = data.vertices.length / 3;
             console.log(`Loaded PLY data with ${this.vertexCount} points`);
-            
+
             // Emit modelLoaded event
             window.dispatchEvent(new CustomEvent('modelLoaded', {
                 detail: {
@@ -760,7 +807,7 @@ export class PointCloudRenderer {
     async loadModel(fileData, fileType) {
         try {
             console.log(`Loading ${fileType.toUpperCase()} model...`);
-            
+
             let data;
             if (fileData instanceof ArrayBuffer) {
                 data = await this.modelLoader.loadFile(fileData, fileType);
@@ -788,7 +835,7 @@ export class PointCloudRenderer {
             this.calculateBounds(data.vertices);
 
             console.log(`Loaded ${fileType.toUpperCase()} model with ${this.vertexCount} vertices`);
-            
+
             // Emit modelLoaded event
             window.dispatchEvent(new CustomEvent('modelLoaded', {
                 detail: {
@@ -808,6 +855,8 @@ export class PointCloudRenderer {
     draw(projectionMatrix, modelViewMatrix) {
         if (this.renderMode === 'points') {
             this.drawPoints(projectionMatrix, modelViewMatrix);
+        } else if (this.renderMode === 'splat') {
+            this.drawSplats(projectionMatrix, modelViewMatrix);
         } else {
             this.drawMesh(projectionMatrix, modelViewMatrix);
         }
@@ -816,11 +865,11 @@ export class PointCloudRenderer {
     setRenderMode(mode) {
         this.renderMode = mode;
     }
-    
+
     setWireframe(enabled) {
         this.wireframe = enabled;
     }
-    
+
 
     // Updated camera position calculation
     getCameraPositionFromBounds() {
@@ -834,10 +883,10 @@ export class PointCloudRenderer {
         const sizeX = this.bounds.max.x - this.bounds.min.x;
         const sizeY = this.bounds.max.y - this.bounds.min.y;
         const sizeZ = this.bounds.max.z - this.bounds.min.z;
-        
+
         // Get the largest dimension
         const maxSize = Math.max(sizeX, sizeY, sizeZ);
-        
+
         // Position camera based on model size
         const distance = maxSize * 2; // Adjust this multiplier to change camera distance
         const elevation = maxSize * 0.5; // Adjust for camera height
@@ -881,21 +930,21 @@ export class PointCloudRenderer {
 
     cleanup() {
         const gl = this.gl;
-        
+
         // Delete point shader program resources
         if (this.program) {
             const shaders = gl.getAttachedShaders(this.program);
             shaders?.forEach(shader => gl.deleteShader(shader));
             gl.deleteProgram(this.program);
         }
-        
+
         // Delete mesh shader program resources
         if (this.meshProgram) {
             const shaders = gl.getAttachedShaders(this.meshProgram);
             shaders?.forEach(shader => gl.deleteShader(shader));
             gl.deleteProgram(this.meshProgram);
         }
-        
+
         // Delete buffers
         Object.values(this.buffers).forEach(buffer => {
             if (buffer) gl.deleteBuffer(buffer);
@@ -907,17 +956,17 @@ export class PointCloudRenderer {
             console.warn('Attempted to draw null node');
             return;
         }
-        
+
         /*console.log('Drawing octree node:', {
             center: node.center,
             size: node.size,
             points: node.points.length,
             hasChildren: !!node.children
         });*/
-        
+
         // Draw current node bounds
         this.drawBoundingBox(node.getBounds());
-        
+
         // Recursively draw children
         if (node.children) {
             for (const child of node.children) {
@@ -932,82 +981,82 @@ export class PointCloudRenderer {
             console.warn('Debug program not initialized');
             return;
         }
-        
+
         // Store original program and GL state
         const originalProgram = gl.getParameter(gl.CURRENT_PROGRAM);
-        
+
         // Use debug shader program
         gl.useProgram(this.debugProgram);
-        
+
         // Enable vertex attributes for debug drawing
         gl.enableVertexAttribArray(this.debugAttribs.position);
-        
+
         // Set debug shader uniforms
         gl.uniformMatrix4fv(this.debugUniforms.projection, false, projectionMatrix);
         gl.uniformMatrix4fv(this.debugUniforms.modelView, false, modelViewMatrix);
-        
+
         // Enable blending for transparent boxes
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        
+
         // Draw octree nodes recursively
         if (this.octree) {
             this.drawOctreeNode(this.octree);  // Call the method as a member function
         }
-        
+
         // Cleanup
         gl.disable(gl.BLEND);
         gl.disableVertexAttribArray(this.debugAttribs.position);
-        
+
         // Restore original program
         gl.useProgram(originalProgram);
     }
 
     drawBoundingBox(bounds) {
         const gl = this.gl;
-        
+
         // Generate line segments for box edges
         const vertices = [];
-        
+
         // Front face
         vertices.push(bounds.min.x, bounds.min.y, bounds.min.z);
         vertices.push(bounds.max.x, bounds.min.y, bounds.min.z);
-        
+
         vertices.push(bounds.max.x, bounds.min.y, bounds.min.z);
         vertices.push(bounds.max.x, bounds.max.y, bounds.min.z);
-        
+
         vertices.push(bounds.max.x, bounds.max.y, bounds.min.z);
         vertices.push(bounds.min.x, bounds.max.y, bounds.min.z);
-        
+
         vertices.push(bounds.min.x, bounds.max.y, bounds.min.z);
         vertices.push(bounds.min.x, bounds.min.y, bounds.min.z);
-        
+
         // Back face
         vertices.push(bounds.min.x, bounds.min.y, bounds.max.z);
         vertices.push(bounds.max.x, bounds.min.y, bounds.max.z);
-        
+
         vertices.push(bounds.max.x, bounds.min.y, bounds.max.z);
         vertices.push(bounds.max.x, bounds.max.y, bounds.max.z);
-        
+
         vertices.push(bounds.max.x, bounds.max.y, bounds.max.z);
         vertices.push(bounds.min.x, bounds.max.y, bounds.max.z);
-        
+
         vertices.push(bounds.min.x, bounds.max.y, bounds.max.z);
         vertices.push(bounds.min.x, bounds.min.y, bounds.max.z);
-        
+
         // Connecting edges
         vertices.push(bounds.min.x, bounds.min.y, bounds.min.z);
         vertices.push(bounds.min.x, bounds.min.y, bounds.max.z);
-        
+
         vertices.push(bounds.max.x, bounds.min.y, bounds.min.z);
         vertices.push(bounds.max.x, bounds.min.y, bounds.max.z);
-        
+
         vertices.push(bounds.max.x, bounds.max.y, bounds.min.z);
         vertices.push(bounds.max.x, bounds.max.y, bounds.max.z);
-        
+
         vertices.push(bounds.min.x, bounds.max.y, bounds.min.z);
         vertices.push(bounds.min.x, bounds.max.y, bounds.max.z);
-        
+
         // Update debug buffer and draw
         gl.bindBuffer(gl.ARRAY_BUFFER, this.debugBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW);
@@ -1015,5 +1064,20 @@ export class PointCloudRenderer {
         gl.drawArrays(gl.LINES, 0, vertices.length / 3);
     }
 
+    drawSplats(projectionMatrix, modelViewMatrix) {
+        const gl = this.gl;
+
+        if (!this.splatProgram || !this.splatUniforms || !this.splatAttributes) {
+            return;
+        }
+
+        try {
+            // TODO: 
+        } catch (error) {
+            console.error('Error in drawSplats:', error);
+        } finally {
+            // Cleanup
+        }
+    }
 
 }

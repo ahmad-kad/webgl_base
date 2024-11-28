@@ -12,18 +12,9 @@ models/
 .DS_Store
 Thumbs.db
 
-# Ignore compiled Python files if any Python is used
-__pycache__/
-*.py[cod]
-*.so
 
 # Ignore environment and virtualenv files
 .env
-.venv
-venv/
-ENV/
-env.bak/
-venv.bak/
 
 # Ignore other common files
 *.swp

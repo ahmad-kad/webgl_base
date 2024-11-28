@@ -12,7 +12,7 @@ class Renderer {
     initializeWebGL() {
         this.canvas = document.querySelector('#glCanvas');
         this.gl = this.canvas.getContext('webgl');
-        
+
         if (!this.gl) {
             alert('Unable to initialize WebGL. Your browser may not support it.');
             return;
@@ -33,7 +33,7 @@ class Renderer {
         this.controls = new Controls(this.camera, this.canvas);
         this.pointCloudRenderer = new PointCloudRenderer(this.gl);
         this.grid = new Grid(this.gl);
-        
+
         this.lastFrame = 0;
         this.isLoading = false;
     }
@@ -51,7 +51,7 @@ class Renderer {
 
     async loadPointCloud(filePath) {
         if (this.isLoading) return;
-        
+
         this.isLoading = true;
         try {
             await this.pointCloudRenderer.loadPLY(filePath);
@@ -67,7 +67,7 @@ class Renderer {
         const { bounds } = this.pointCloudRenderer;
         const center = this.calculateCenter(bounds);
         const size = this.calculateBoundsSize(bounds);
-        
+
         this.positionCamera(center, size);
     }
 
@@ -116,7 +116,7 @@ class Renderer {
 
         this.controls.update(deltaTime);
         this.clearCanvas();
-        
+
         const matrices = this.setupMatrices();
         this.renderScene(matrices);
 
