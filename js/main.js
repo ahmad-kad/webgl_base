@@ -14,7 +14,7 @@ class App {
         window.glMatrix = { mat4, vec3 };
         this.mat4 = mat4;
         this.vec3 = vec3;
-        
+
         this.initializeWebGL();
         if (this.gl) {
             this.initializeComponents();
@@ -22,7 +22,7 @@ class App {
             this.startRenderLoop();
         }
     }
-    
+
     initializeWebGL() {
         console.log('Initializing WebGL...');
         this.canvas = document.querySelector('#glCanvas');
@@ -32,7 +32,7 @@ class App {
         }
 
         // Initialize WebGL 1 context
-        this.gl = this.canvas.getContext('webgl', { 
+        this.gl = this.canvas.getContext('webgl', {
             xrCompatible: true,
             antialias: true,
             alpha: false,
@@ -68,28 +68,28 @@ class App {
         try {
             this.camera = new Camera();
             console.log('Camera initialized');
-    
+
             this.controls = new Controls(this.camera, this.canvas);
             console.log('Controls initialized');
-    
+
             this.pointCloudRenderer = new PointCloudRenderer(this.gl);
             console.log('Point cloud renderer initialized');
-    
+
             // Initialize XR controls first
             this.xrControls = new XRControls(this.pointCloudRenderer, this.camera);
             console.log('XR controls initialized');
-    
+
             // Initialize viewer controls and pass XR controls reference
             this.viewerControls = new ViewerControls(this.pointCloudRenderer);
-            this.viewerControls.setXRControls(this.xrControls);  
+            this.viewerControls.setXRControls(this.xrControls);
             console.log('Viewer controls initialized');
-    
+
             this.grid = new Grid(this.gl);
             console.log('Grid initialized');
-    
+
             this.lastFrame = 0;
             this.isLoading = false;
-    
+
             // Add event listener for model loading
             window.addEventListener('modelLoaded', (event) => {
                 const cameraSetup = this.pointCloudRenderer.getCameraPositionFromBounds();
@@ -116,7 +116,7 @@ class App {
                 }
                 document.body.classList.remove('vr-mode');
             });
-    
+
         } catch (error) {
             console.error('Error initializing components:', error);
             throw error;
@@ -138,10 +138,10 @@ class App {
 
     async loadPointCloud(filePath) {
         if (this.isLoading) return;
-        
+
         console.log('Loading point cloud from:', filePath);
         this.isLoading = true;
-        
+
         try {
             await this.pointCloudRenderer.loadPLY(filePath);
             this.centerCameraOnPointCloud();
@@ -159,13 +159,13 @@ class App {
             y: (bounds.max.y + bounds.min.y) / 2,
             z: (bounds.max.z + bounds.min.z) / 2
         };
-        
+
         const size = Math.max(
             bounds.max.x - bounds.min.x,
             bounds.max.y - bounds.min.y,
             bounds.max.z - bounds.min.z
         );
-        
+
         this.camera.position = [
             center.x,
             center.y + size * 0.5,
@@ -179,29 +179,29 @@ class App {
             now *= 0.001;
             const deltaTime = now - this.lastFrame;
             this.lastFrame = now;
-    
+
             // XR VS Normal Controls
             if (!this.xrControls.xrSession) {
                 this.controls.update(deltaTime);
             }
-    
+
             this.gl.clearColor(0.1, 0.1, 0.1, 1.0);
             this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
-    
+
             // SMatrix
             const aspect = this.gl.canvas.clientWidth / this.gl.canvas.clientHeight;
             const projectionMatrix = this.mat4.create();
             this.mat4.perspective(projectionMatrix, 45 * Math.PI / 180, aspect, 0.1, 1000.0);
-    
+
             const viewMatrix = this.camera.getViewMatrix();
             const modelMatrix = this.mat4.create();
             const modelViewMatrix = this.mat4.create();
             this.mat4.multiply(modelViewMatrix, viewMatrix, modelMatrix);
-    
+
             // Render scene
             this.grid.draw(projectionMatrix, modelViewMatrix);
             this.pointCloudRenderer.draw(projectionMatrix, modelViewMatrix);
-    
+
             requestAnimationFrame((now) => this.render(now));
         } catch (error) {
             console.error('Error in render loop:', error);
@@ -227,7 +227,7 @@ window.addEventListener('load', async () => {
             import('./model-loader.js'),
             import('./shaders.js')
         ]);
-        
+
         console.log('All modules loaded successfully');
         new App();
     } catch (error) {
