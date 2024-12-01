@@ -213,7 +213,7 @@ class App {
     }
 }
 
-const USE_GAUSSIAN_SPLATS = false;
+const USE_GAUSSIAN_SPLATS = true;
 if (USE_GAUSSIAN_SPLATS) {
     new GaussianSplatApp();
 } else {

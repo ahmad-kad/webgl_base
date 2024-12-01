@@ -10,11 +10,12 @@ export class GaussianSplatApp {
         console.log('GaussianSplatApp constructor');
         this.initializeWebGL();
 
-        let defaultViewMatrix = [
-            0.47, 0.04, 0.88, 0, -0.11, 0.99, 0.02, 0, -0.88, -0.11, 0.47, 0, 0.07,
-            0.03, 6.55, 1,
-        ];
-        this.viewMatrix = defaultViewMatrix;
+        this.viewMatrix = mat4.fromValues(
+            0.47, 0.04, 0.88, 0,
+            -0.11, 0.99, 0.02, 0,
+            -0.88, -0.11, 0.47, 0,
+            0.07, 0.03, 6.55, 1
+        );
 
         this.canvas;
         const gl = this.gl;
@@ -26,13 +27,9 @@ export class GaussianSplatApp {
         this.setupWindowEventListeners();
         this.setupControlEventListeners();
 
-        let jumpDelta = 0;
         this.vertexCount = 0;
 
-        let lastFrame = 0;
-        let start = 0;
-
-        const frame = (now) => {
+        const frame = () => {
             const activeKeys = this.activeKeys;
             let inv = mat4.invert(mat4.create(), this.viewMatrix);
             let shiftKey =
@@ -105,15 +102,8 @@ export class GaussianSplatApp {
 
             mat4.invert(this.viewMatrix, inv);
 
-            jumpDelta = Math.max(0, jumpDelta - 0.05);
+            let actualViewMatrix = mat4.invert(mat4.create(), inv);
 
-            let inv2 = mat4.create();
-            mat4.invert(inv2, this.viewMatrix);
-            mat4.translate(inv2, inv2, [0, 0, jumpDelta]);
-            mat4.rotateX(inv2, inv2, 0.1 * jumpDelta);
-            let actualViewMatrix = mat4.invert(mat4.create(), inv2);
-
-            //const viewProj = multiply4(this.projectionMatrix, actualViewMatrix);
             const viewProj = mat4.create();
             mat4.multiply(viewProj, this.projectionMatrix, actualViewMatrix);
             this.worker.postMessage({ view: viewProj });
@@ -121,13 +111,11 @@ export class GaussianSplatApp {
 
             if (this.vertexCount > 0) {
                 gl.uniformMatrix4fv(this.u_view, false, actualViewMatrix);
-                gl.clear(gl.COLOR_BUFFER_BIT);
+                //gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, 4, this.vertexCount);
             } else {
-                gl.clear(gl.COLOR_BUFFER_BIT);
-                start = Date.now() + 2000;
+                //gl.clear(gl.COLOR_BUFFER_BIT);
             }
-            lastFrame = now;
             requestAnimationFrame(frame);
         };
 
@@ -141,14 +129,12 @@ export class GaussianSplatApp {
 
         const selectFile = (file) => {
             const fr = new FileReader();
-            stopLoading = true;
             fr.onload = () => {
                 const splatData = new Uint8Array(fr.result);
                 console.log("Loaded", Math.floor(splatData.length / this.ROW_LENGTH));
 
                 if (isPly(splatData)) {
-                    // ply file magic header means it should be handled differently
-                    this.worker.postMessage({ ply: splatData.buffer, save: true });
+                    this.worker.postMessage({ ply: splatData.buffer });
                 } else {
                     this.worker.postMessage({
                         buffer: splatData.buffer,
@@ -171,8 +157,6 @@ export class GaussianSplatApp {
             e.stopPropagation();
             selectFile(e.dataTransfer.files[0]);
         });
-
-        let stopLoading = false;
     }
 
     initializeWebGL() {
@@ -300,7 +284,7 @@ export class GaussianSplatApp {
                 gl.bindTexture(gl.TEXTURE_2D, this.texture);
             } else if (e.data.depthIndex) {
                 const { depthIndex, viewProj } = e.data;
-                // console.log("Depth index changed", e.data);
+                //console.log("Depth index changed", e.data);
                 gl.bindBuffer(gl.ARRAY_BUFFER, this.indexBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, depthIndex, gl.DYNAMIC_DRAW);
                 this.vertexCount = e.data.vertexCount;

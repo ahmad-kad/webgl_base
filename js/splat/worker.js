@@ -342,7 +342,7 @@ export function createWorker(self) {
             runSort(viewProj);
             buffer = processPlyBuffer(e.data.ply);
             vertexCount = Math.floor(buffer.byteLength / rowLength);
-            postMessage({ buffer: buffer, save: !!e.data.save });
+            postMessage({ buffer: buffer });
         } else if (e.data.buffer) {
             buffer = e.data.buffer;
             vertexCount = e.data.vertexCount;
