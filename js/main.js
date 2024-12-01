@@ -4,9 +4,8 @@ import { Controls } from './controls.js';
 import { ViewerControls } from './viewer-controls.js';
 import { PointCloudRenderer } from './pointcloud-renderer.js';
 import { Grid } from './grid.js';
-import { ModelLoader } from './model-loader.js'; // Keep this import
-import { SHADERS } from './shaders.js';
 import { XRControls } from './XRControls.js';
+import { GaussianSplatApp } from './gaussianSplatApp.js';
 
 class App {
     constructor() {
@@ -214,26 +213,12 @@ class App {
     }
 }
 
-window.addEventListener('load', async () => {
-    console.log('Window loaded, initializing application...');
-    try {
-        // Make sure all modules are loaded first
-        await Promise.all([
-            import('./camera.js'),
-            import('./controls.js'),
-            import('./viewer-controls.js'),
-            import('./pointcloud-renderer.js'),
-            import('./grid.js'),
-            import('./model-loader.js'),
-            import('./shaders.js')
-        ]);
-
-        console.log('All modules loaded successfully');
-        new App();
-    } catch (error) {
-        console.error('Error loading modules or initializing app:', error);
-    }
-});
+const USE_GAUSSIAN_SPLATS = false;
+if (USE_GAUSSIAN_SPLATS) {
+    const app = new GaussianSplatApp();
+} else {
+    new App();
+}
 
 window.addEventListener('modelLoaded', (event) => {
     const { bounds, vertexCount } = event.detail;
