@@ -1,6 +1,7 @@
 import { createWorker } from "./splat/worker.js";
 import { vertexShaderSource, fragmentShaderSource } from "./splat/shaderSource.js";
-import { getProjectionMatrix, invert4, multiply4, rotate4, translate4 } from "./splat/utils.js";
+import { getProjectionMatrix } from "./splat/utils.js";
+import { mat4 } from 'https://cdn.skypack.dev/gl-matrix';
 
 export class GaussianSplatApp {
     ROW_LENGTH = 3 * 4 + 3 * 4 + 4 + 4;
@@ -8,7 +9,6 @@ export class GaussianSplatApp {
     constructor() {
         console.log('GaussianSplatApp constructor');
         this.initializeWebGL();
-        this.carousel = true;
 
         let defaultViewMatrix = [
             0.47, 0.04, 0.88, 0, -0.11, 0.99, 0.02, 0, -0.88, -0.11, 0.47, 0, 0.07,
@@ -34,7 +34,7 @@ export class GaussianSplatApp {
 
         const frame = (now) => {
             const activeKeys = this.activeKeys;
-            let inv = invert4(this.viewMatrix);
+            let inv = mat4.invert(mat4.create(), this.viewMatrix);
             let shiftKey =
                 activeKeys.includes("Shift") ||
                 activeKeys.includes("ShiftLeft") ||
@@ -42,81 +42,80 @@ export class GaussianSplatApp {
 
             if (activeKeys.includes("ArrowUp")) {
                 if (shiftKey) {
-                    inv = translate4(inv, 0, -0.03, 0);
+                    mat4.translate(inv, inv, [0, -0.03, 0]); // Translate downwards (Y axis)
                 } else {
-                    inv = translate4(inv, 0, 0, 0.1);
+                    mat4.translate(inv, inv, [0, 0, 0.1]); // Translate forward (Z axis)
                 }
             }
             if (activeKeys.includes("ArrowDown")) {
                 if (shiftKey) {
-                    inv = translate4(inv, 0, 0.03, 0);
+                    mat4.translate(inv, inv, [0, 0.03, 0]); // Translate upwards (Y axis)
                 } else {
-                    inv = translate4(inv, 0, 0, -0.1);
+                    mat4.translate(inv, inv, [0, 0, -0.1]); // Translate backward (Z axis)
                 }
             }
-            if (activeKeys.includes("ArrowLeft"))
-                inv = translate4(inv, -0.03, 0, 0);
-            //
-            if (activeKeys.includes("ArrowRight"))
-                inv = translate4(inv, 0.03, 0, 0);
-            // inv = rotate4(inv, 0.01, 0, 1, 0);
-            if (activeKeys.includes("KeyA")) inv = rotate4(inv, -0.01, 0, 1, 0);
-            if (activeKeys.includes("KeyD")) inv = rotate4(inv, 0.01, 0, 1, 0);
-            if (activeKeys.includes("KeyQ")) inv = rotate4(inv, 0.01, 0, 0, 1);
-            if (activeKeys.includes("KeyE")) inv = rotate4(inv, -0.01, 0, 0, 1);
-            if (activeKeys.includes("KeyW")) inv = rotate4(inv, 0.005, 1, 0, 0);
-            if (activeKeys.includes("KeyS")) inv = rotate4(inv, -0.005, 1, 0, 0);
+            if (activeKeys.includes("ArrowLeft")) {
+                mat4.translate(inv, inv, [-0.03, 0, 0]); // Translate left (X axis)
+            }
+            if (activeKeys.includes("ArrowRight")) {
+                mat4.translate(inv, inv, [0.03, 0, 0]); // Translate right (X axis)
+            }
+
+            if (activeKeys.includes("KeyA")) {
+                mat4.rotateY(inv, inv, -0.01); // Rotate around Y-axis (left)
+            }
+            if (activeKeys.includes("KeyD")) {
+                mat4.rotateY(inv, inv, 0.01); // Rotate around Y-axis (right)
+            }
+            if (activeKeys.includes("KeyQ")) {
+                mat4.rotateZ(inv, inv, 0.01); // Rotate around Z-axis (counterclockwise)
+            }
+            if (activeKeys.includes("KeyE")) {
+                mat4.rotateZ(inv, inv, -0.01); // Rotate around Z-axis (clockwise)
+            }
+            if (activeKeys.includes("KeyW")) {
+                mat4.rotateX(inv, inv, 0.005); // Rotate around X-axis (up)
+            }
+            if (activeKeys.includes("KeyS")) {
+                mat4.rotateX(inv, inv, -0.005); // Rotate around X-axis (down)
+            }
 
             if (
                 ["KeyJ", "KeyK", "KeyL", "KeyI"].some((k) => activeKeys.includes(k))
             ) {
                 let d = 4;
-                inv = translate4(inv, 0, 0, d);
-                inv = rotate4(
-                    inv,
-                    activeKeys.includes("KeyJ")
-                        ? -0.05
-                        : activeKeys.includes("KeyL")
-                            ? 0.05
-                            : 0,
-                    0,
-                    1,
-                    0,
-                );
-                inv = rotate4(
-                    inv,
-                    activeKeys.includes("KeyI")
-                        ? 0.05
-                        : activeKeys.includes("KeyK")
-                            ? -0.05
-                            : 0,
-                    1,
-                    0,
-                    0,
-                );
-                inv = translate4(inv, 0, 0, -d);
+                mat4.translate(inv, inv, [0, 0, d]); // Translate along Z axis
+
+                // Rotate around Y-axis if "KeyJ" or "KeyL" is pressed
+                if (activeKeys.includes("KeyJ")) {
+                    mat4.rotateY(inv, inv, -0.05); // Rotate left (counterclockwise)
+                } else if (activeKeys.includes("KeyL")) {
+                    mat4.rotateY(inv, inv, 0.05); // Rotate right (clockwise)
+                }
+
+                // Rotate around X-axis if "KeyI" or "KeyK" is pressed
+                if (activeKeys.includes("KeyI")) {
+                    mat4.rotateX(inv, inv, 0.05); // Rotate up (counterclockwise)
+                } else if (activeKeys.includes("KeyK")) {
+                    mat4.rotateX(inv, inv, -0.05); // Rotate down (clockwise)
+                }
+
+                mat4.translate(inv, inv, [0, 0, -d]); // Translate back along Z axis
             }
 
-            this.viewMatrix = invert4(inv);
-
-            if (this.carousel) {
-                let inv = invert4(defaultViewMatrix);
-
-                const t = Math.sin((Date.now() - start) / 5000);
-                inv = translate4(inv, 2.5 * t, 0, 6 * (1 - Math.cos(t)));
-                inv = rotate4(inv, -0.6 * t, 0, 1, 0);
-
-                this.viewMatrix = invert4(inv);
-            }
+            mat4.invert(this.viewMatrix, inv);
 
             jumpDelta = Math.max(0, jumpDelta - 0.05);
 
-            let inv2 = invert4(this.viewMatrix);
-            inv2 = translate4(inv2, 0, -jumpDelta, 0);
-            inv2 = rotate4(inv2, -0.1 * jumpDelta, 1, 0, 0);
-            let actualViewMatrix = invert4(inv2);
+            let inv2 = mat4.create();
+            mat4.invert(inv2, this.viewMatrix);
+            mat4.translate(inv2, inv2, [0, 0, jumpDelta]);
+            mat4.rotateX(inv2, inv2, 0.1 * jumpDelta);
+            let actualViewMatrix = mat4.invert(mat4.create(), inv2);
 
-            const viewProj = multiply4(this.projectionMatrix, actualViewMatrix);
+            //const viewProj = multiply4(this.projectionMatrix, actualViewMatrix);
+            const viewProj = mat4.create();
+            mat4.multiply(viewProj, this.projectionMatrix, actualViewMatrix);
             this.worker.postMessage({ view: viewProj });
 
 
@@ -355,7 +354,6 @@ export class GaussianSplatApp {
     setupControlEventListeners() {
         window.addEventListener("keydown", (e) => {
             // if (document.activeElement != document.body) return;
-            this.carousel = false;
             if (!this.activeKeys.includes(e.code)) this.activeKeys.push(e.code);
 
             if (e.code == "KeyV") { // save the current view matrix to the URL hash
@@ -364,8 +362,6 @@ export class GaussianSplatApp {
                     JSON.stringify(
                         this.viewMatrix.map((k) => Math.round(k * 100) / 100),
                     );
-            } else if (e.code === "KeyP") { // start carousel mode
-                this.carousel = true;
             }
         });
 
@@ -379,7 +375,6 @@ export class GaussianSplatApp {
         window.addEventListener(
             "wheel",
             (e) => {
-                this.carousel = false;
                 e.preventDefault();
                 const lineHeight = 10;
                 const scale =
@@ -388,34 +383,42 @@ export class GaussianSplatApp {
                         : e.deltaMode == 2
                             ? innerHeight
                             : 1;
-                let inv = invert4(this.viewMatrix);
+                let inv = mat4.invert(mat4.create(), this.viewMatrix);
                 if (e.shiftKey) {
-                    inv = translate4(
+                    mat4.translate(
                         inv,
-                        (e.deltaX * scale) / innerWidth,
-                        (e.deltaY * scale) / innerHeight,
-                        0,
+                        inv,
+                        [
+                            (e.deltaX * scale) / innerWidth,  // X translation
+                            (e.deltaY * scale) / innerHeight, // Y translation
+                            0                                // Z translation (no change)
+                        ]
                     );
                 } else if (e.ctrlKey || e.metaKey) {
-                    // inv = rotate4(inv,  (e.deltaX * scale) / innerWidth,  0, 0, 1);
-                    // inv = translate4(inv,  0, (e.deltaY * scale) / innerHeight, 0);
-                    // let preY = inv[13];
-                    inv = translate4(
+                    mat4.translate(
                         inv,
-                        0,
-                        0,
-                        (-10 * (e.deltaY * scale)) / innerHeight,
+                        inv,
+                        [
+                            0,                                // X translation (no change)
+                            0,                                // Y translation (no change)
+                            (-10 * (e.deltaY * scale)) / innerHeight // Z translation
+                        ]
                     );
-                    // inv[13] = preY;
                 } else {
                     let d = 4;
-                    inv = translate4(inv, 0, 0, d);
-                    inv = rotate4(inv, -(e.deltaX * scale) / innerWidth, 0, 1, 0);
-                    inv = rotate4(inv, (e.deltaY * scale) / innerHeight, 1, 0, 0);
-                    inv = translate4(inv, 0, 0, -d);
+                    mat4.translate(inv, inv, [0, 0, d]);
+
+                    // Apply rotation around the Y-axis (based on horizontal mouse movement)
+                    mat4.rotateY(inv, inv, -(e.deltaX * scale) / innerWidth);
+
+                    // Apply rotation around the X-axis (based on vertical mouse movement)
+                    mat4.rotateX(inv, inv, (e.deltaY * scale) / innerHeight);
+
+                    // Apply translation back along the Z-axis
+                    mat4.translate(inv, inv, [0, 0, -d]);
                 }
 
-                this.viewMatrix = invert4(inv);
+                mat4.invert(this.viewMatrix, inv);
             },
             { passive: false },
         );
@@ -423,14 +426,12 @@ export class GaussianSplatApp {
         const canvas = this.canvas;
         let startX, startY, down;
         canvas.addEventListener("mousedown", (e) => {
-            this.carousel = false;
             e.preventDefault();
             startX = e.clientX;
             startY = e.clientY;
             down = e.ctrlKey || e.metaKey ? 2 : 1;
         });
         canvas.addEventListener("contextmenu", (e) => {
-            this.carousel = false;
             e.preventDefault();
             startX = e.clientX;
             startY = e.clientY;
@@ -440,34 +441,40 @@ export class GaussianSplatApp {
         canvas.addEventListener("mousemove", (e) => {
             e.preventDefault();
             if (down == 1) {
-                let inv = invert4(this.viewMatrix);
+                let inv = mat4.invert(mat4.create(), this.viewMatrix);
                 let dx = (5 * (e.clientX - startX)) / innerWidth;
                 let dy = (5 * (e.clientY - startY)) / innerHeight;
                 let d = 4;
 
-                inv = translate4(inv, 0, 0, d);
-                inv = rotate4(inv, dx, 0, 1, 0);
-                inv = rotate4(inv, -dy, 1, 0, 0);
-                inv = translate4(inv, 0, 0, -d);
-                // let postAngle = Math.atan2(inv[0], inv[10])
-                // inv = rotate4(inv, postAngle - preAngle, 0, 0, 1)
-                // console.log(postAngle)
-                this.viewMatrix = invert4(inv);
+                // Apply translation along Z-axis
+                mat4.translate(inv, inv, [0, 0, d]);
+
+                // Apply rotation around Y-axis (dx controls rotation)
+                mat4.rotateY(inv, inv, dx);
+
+                // Apply rotation around X-axis (-dy controls rotation)
+                mat4.rotateX(inv, inv, -dy);
+
+                // Apply translation back along Z-axis
+                mat4.translate(inv, inv, [0, 0, -d]);
+
+                mat4.invert(this.viewMatrix, inv);
 
                 startX = e.clientX;
                 startY = e.clientY;
             } else if (down == 2) {
-                let inv = invert4(this.viewMatrix);
-                // inv = rotateY(inv, );
-                // let preY = inv[13];
-                inv = translate4(
+                let inv = mat4.invert(mat4.create(), this.viewMatrix);
+
+                inv = mat4.translate(
                     inv,
-                    (-10 * (e.clientX - startX)) / innerWidth,
-                    0,
-                    (10 * (e.clientY - startY)) / innerHeight,
+                    inv,
+                    [
+                        (-10 * (e.clientX - startX)) / innerWidth,  // X translation
+                        0,  // Y translation (no change)
+                        (10 * (e.clientY - startY)) / innerHeight   // Z translation
+                    ]
                 );
-                // inv[13] = preY;
-                this.viewMatrix = invert4(inv);
+                this.viewMatrix = mat4.invert(mat4.create(), inv);
 
                 startX = e.clientX;
                 startY = e.clientY;

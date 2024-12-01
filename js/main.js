@@ -215,7 +215,7 @@ class App {
 
 const USE_GAUSSIAN_SPLATS = false;
 if (USE_GAUSSIAN_SPLATS) {
-    const app = new GaussianSplatApp();
+    new GaussianSplatApp();
 } else {
     new App();
 }
