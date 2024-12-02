@@ -2,7 +2,7 @@ export class Controls {
     constructor(camera, canvas) {
         this.camera = camera;
         this.canvas = canvas;
-        
+
         this.keys = {};
         this.mouseDown = false;
         this.lastX = this.canvas.width / 2;
@@ -22,12 +22,12 @@ export class Controls {
     setupEventListeners() {
         document.addEventListener('keydown', (e) => {
             this.keys[e.key.toLowerCase()] = true;
-            
+
             if (e.key.toLowerCase() === 'f') {
                 this.resetCamera();
             }
         });
-        
+
         document.addEventListener('keyup', (e) => {
             this.keys[e.key.toLowerCase()] = false;
         });
@@ -50,11 +50,11 @@ export class Controls {
         this.camera.position = [...this.initialPosition];
         this.camera.front = [...this.initialFront];
         this.camera.up = [...this.initialUp];
-        
+
         // Reset orientation
         this.camera.yaw = this.initialYaw;
         this.camera.pitch = this.initialPitch;
-        
+
         // Update camera vectors to apply changes
         this.camera.updateCameraVectors();
     }

@@ -8,30 +8,33 @@ export class Camera {
         this.up = vec3.fromValues(0, 1, 0);
         this.right = vec3.create();
         this.worldUp = vec3.fromValues(0, 1, 0);
-        
+
         // Euler angles
         this.yaw = -90;
         this.pitch = 0;
-        
+
         // Camera options
         this.movementSpeed = 10.0;
         this.mouseSensitivity = 0.1;
-        
+
         this.updateCameraVectors();
+
+        this.fy = 1164.6601287484507;
+        this.fx = 1159.5880733038064;
     }
 
     updateCameraVectors() {
         // Calculate new front vector
         const front = vec3.create();
-        front[0] = Math.cos(this.yaw * Math.PI/180) * Math.cos(this.pitch * Math.PI/180);
-        front[1] = Math.sin(this.pitch * Math.PI/180);
-        front[2] = Math.sin(this.yaw * Math.PI/180) * Math.cos(this.pitch * Math.PI/180);
+        front[0] = Math.cos(this.yaw * Math.PI / 180) * Math.cos(this.pitch * Math.PI / 180);
+        front[1] = Math.sin(this.pitch * Math.PI / 180);
+        front[2] = Math.sin(this.yaw * Math.PI / 180) * Math.cos(this.pitch * Math.PI / 180);
         vec3.normalize(this.front, front);
-        
+
         // Recalculate right and up vectors
         vec3.cross(this.right, this.front, this.worldUp);
         vec3.normalize(this.right, this.right);
-        
+
         vec3.cross(this.up, this.right, this.front);
         vec3.normalize(this.up, this.up);
     }
@@ -52,7 +55,7 @@ export class Camera {
         const velocity = this.movementSpeed * deltaTime;
         const moveVector = vec3.create();
 
-        switch(direction) {
+        switch (direction) {
             case 'FORWARD':
                 vec3.scaleAndAdd(this.position, this.position, this.front, velocity);
                 break;
