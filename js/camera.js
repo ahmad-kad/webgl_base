@@ -18,7 +18,6 @@ export class Camera {
         this.mouseSensitivity = 0.1;
 
         this.updateCameraVectors();
-
         this.fy = 1164.6601287484507;
         this.fx = 1159.5880733038064;
     }
@@ -34,9 +33,24 @@ export class Camera {
         // Recalculate right and up vectors
         vec3.cross(this.right, this.front, this.worldUp);
         vec3.normalize(this.right, this.right);
-
         vec3.cross(this.up, this.right, this.front);
         vec3.normalize(this.up, this.up);
+    }
+
+    processScreenSpaceRotation(angle) {
+        // Rotate the up vector around the front vector
+        const rotationMatrix = mat4.create();
+        mat4.rotate(rotationMatrix, rotationMatrix, angle, this.front);
+        
+        // Apply rotation to up vector
+        vec3.transformMat4(this.up, this.up, rotationMatrix);
+        
+        // Ensure up vector stays normalized
+        vec3.normalize(this.up, this.up);
+        
+        // Update right vector
+        vec3.cross(this.right, this.front, this.up);
+        vec3.normalize(this.right, this.right);
     }
 
     lookAt(target) {
@@ -69,10 +83,11 @@ export class Camera {
                 vec3.scaleAndAdd(this.position, this.position, this.right, velocity);
                 break;
             case 'UP':
-                this.position[1] += velocity;
+                // Use the camera's up vector instead of world up
+                vec3.scaleAndAdd(this.position, this.position, this.up, velocity);
                 break;
             case 'DOWN':
-                this.position[1] -= velocity;
+                vec3.scaleAndAdd(this.position, this.position, this.up, -velocity);
                 break;
         }
     }
@@ -84,7 +99,7 @@ export class Camera {
         this.yaw += xoffset;
         this.pitch += yoffset;
 
-        // Constrain pitch to avoid camera flipping
+        // Constrain pitch
         if (constrainPitch) {
             this.pitch = Math.max(-89.0, Math.min(89.0, this.pitch));
         }

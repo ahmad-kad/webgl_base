@@ -2,27 +2,23 @@ export class Controls {
     constructor(camera, canvas) {
         this.camera = camera;
         this.canvas = canvas;
-
         this.keys = {};
         this.mouseDown = false;
         this.lastX = this.canvas.width / 2;
         this.lastY = this.canvas.height / 2;
-
         this.rotationSpeed = 5.0;
-
+        this.rollSpeed = 2.0; // Speed for screen space rotation
         this.initialPosition = [...camera.position];
         this.initialFront = [...camera.front];
         this.initialUp = [...camera.up];
         this.initialYaw = camera.yaw;
         this.initialPitch = camera.pitch;
-
         this.setupEventListeners();
     }
 
     setupEventListeners() {
         document.addEventListener('keydown', (e) => {
             this.keys[e.key.toLowerCase()] = true;
-
             if (e.key.toLowerCase() === 'f') {
                 this.resetCamera();
             }
@@ -50,28 +46,30 @@ export class Controls {
         this.camera.position = [...this.initialPosition];
         this.camera.front = [...this.initialFront];
         this.camera.up = [...this.initialUp];
-
         // Reset orientation
         this.camera.yaw = this.initialYaw;
         this.camera.pitch = this.initialPitch;
-
         // Update camera vectors to apply changes
         this.camera.updateCameraVectors();
     }
 
     update(deltaTime) {
         // Movement controls (WASD + QE)
-        if (this.keys['w']) this.camera.processKeyboard('FORWARD', deltaTime);
-        if (this.keys['s']) this.camera.processKeyboard('BACKWARD', deltaTime);
+        if (this.keys['s']) this.camera.processKeyboard('FORWARD', deltaTime);
+        if (this.keys['w']) this.camera.processKeyboard('BACKWARD', deltaTime);
         if (this.keys['a']) this.camera.processKeyboard('LEFT', deltaTime);
         if (this.keys['d']) this.camera.processKeyboard('RIGHT', deltaTime);
         if (this.keys['q']) this.camera.processKeyboard('DOWN', deltaTime);
         if (this.keys['e']) this.camera.processKeyboard('UP', deltaTime);
 
         // Camera rotation controls (IJKL)
-        if (this.keys['i']) this.camera.processMouseMovement(0, this.rotationSpeed);     // Look up
-        if (this.keys['k']) this.camera.processMouseMovement(0, -this.rotationSpeed);    // Look down
-        if (this.keys['j']) this.camera.processMouseMovement(-this.rotationSpeed, 0);    // Look left
-        if (this.keys['l']) this.camera.processMouseMovement(this.rotationSpeed, 0);     // Look right
+        if (this.keys['i']) this.camera.processMouseMovement(0, this.rotationSpeed);
+        if (this.keys['k']) this.camera.processMouseMovement(0, -this.rotationSpeed);
+        if (this.keys['l']) this.camera.processMouseMovement(-this.rotationSpeed, 0);
+        if (this.keys['j']) this.camera.processMouseMovement(this.rotationSpeed, 0);
+
+        // Screen space rotation controls (O/U)
+        if (this.keys['u']) this.camera.processScreenSpaceRotation(this.rollSpeed * deltaTime);
+        if (this.keys['o']) this.camera.processScreenSpaceRotation(-this.rollSpeed * deltaTime);
     }
 }
