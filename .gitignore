@@ -1,0 +1,21 @@
+# Ignore node_modules and models directories
+node_modules/
+models/
+
+# Ignore JavaScript and CSS build artifacts
+*.log
+*.tmp
+*.lock
+*.cache
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+
+# Ignore environment and virtualenv files
+.env
+
+# Ignore other common files
+*.swp
+*.swo

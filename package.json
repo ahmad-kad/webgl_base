@@ -3,13 +3,19 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "live-server --port=8000 --watch=index.html,js,styles"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "gl-matrix": "^3.4.3"
+    "express": "^4.21.1",
+    "gl-matrix": "^3.4.3",
+    "http-server": "^14.1.1"
   },
-  "description": ""
+  "description": "Base for web_gl viewer project",
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  }
 }

@@ -1,29 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL 3D Viewer</title>
-    <link rel="stylesheet" href="styles/main.css">
+    <meta charset="utf-8">
+    <title>Point Cloud Viewer</title>
+    <!-- Universal XR meta tags -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
+    <!-- Meta Quest specific -->
+    <meta name="oculus-mobile-web-app-capable" content="yes">
+    <meta name="oculus:background-transparency" content="true">
+    <meta name="oculus:link-session" content="true">
+    
+    <!-- VisionOS specific -->
+    <meta name="supported-xr-views" content="immersive-vr">
+    <meta name="visionos-hand-tracking" content="enabled">
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        #glCanvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        /* Universal XR UI styling */
+        .viewer-controls {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 20px;
+            font-size: 16px;
+            line-height: 1.5;
+            pointer-events: auto;
+        }
+        .xr-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: #4CAF50;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 1000;
+        }
+    </style>
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
-    <div class="ui-overlay">
-        <div class="controls-info">
-            <h3>Controls:</h3>
-            <ul>
-                <li>W/S - Move Forward/Backward</li>
-                <li>A/D - Move Left/Right</li>
-                <li>Q/E - Move Up/Down</li>
-                <li>Mouse Drag - Look Around</li>
-            </ul>
-        </div>
-    </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
-    <script src="node_modules/gl-matrix/gl-matrix-min.js"></script>
-    <script src="js/camera.js"></script>
-    <script src="js/controls.js"></script>
-    <script src="js/grid.js"></script>
-    <script src="js/main.js"></script>
+    <button id="xr-button" class="xr-button" style="display: none;">Enter VR</button>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
