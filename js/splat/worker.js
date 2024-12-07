@@ -1,3 +1,5 @@
+
+
 export function createWorker(self) {
     let buffer;
     let vertexCount = 0;

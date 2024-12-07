@@ -7,12 +7,15 @@ uniform highp usampler2D u_texture;
 uniform mat4 projection, view;
 uniform vec2 focal;
 uniform vec2 viewport;
+uniform sampler2D u_depthTexture;
 
 in vec2 position;
 in int index;
 
 out vec4 vColor;
 out vec2 vPosition;
+out float vDepth;  
+out float vDepthDiff;
 
 void main () {
     uvec4 cen = texelFetch(u_texture, ivec2((uint(index) & 0x3ffu) << 1, uint(index) >> 10), 0);
