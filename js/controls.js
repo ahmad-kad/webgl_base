@@ -6,7 +6,7 @@ export class Controls {
         this.mouseDown = false;
         this.lastX = this.canvas.width / 2;
         this.lastY = this.canvas.height / 2;
-        this.rotationSpeed = 5.0;
+        this.rotationSpeed = 10.0;
         this.rollSpeed = 2.0; // Speed for screen space rotation
         this.initialPosition = [...camera.position];
         this.initialFront = [...camera.front];
