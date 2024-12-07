@@ -20,7 +20,8 @@ void main () {
     vec4 pos2d = projection * cam;
 
     float clip = 1.2 * pos2d.w;
-    if (pos2d.z < -clip || pos2d.x < -clip || pos2d.x > clip || pos2d.y < -clip || pos2d.y > clip) {
+    vec4 clipBounds = abs(pos2d / pos2d.w);
+    if (max(max(clipBounds.x, clipBounds.y), clipBounds.z) > 1.2) {
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         return;
     }

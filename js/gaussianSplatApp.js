@@ -5,6 +5,7 @@ import { mat4 } from 'https://cdn.skypack.dev/gl-matrix';
 import { Camera } from './camera.js';
 import { Controls } from './controls.js';
 import { Grid } from './grid.js';
+import { ViewerControls } from './viewer-controls.js';
 
 export class GaussianSplatApp {
     ROW_LENGTH = 3 * 4 + 3 * 4 + 4 + 4;
@@ -16,12 +17,12 @@ export class GaussianSplatApp {
         this.initShader();
         this.setupWorker();
         this.setupWindowEventListeners();
-
+        this.viewerControls = new ViewerControls(this);
         const frame = (now) => {
             now *= 0.001;
             const deltaTime = now - this.lastFrame;
             this.lastFrame = now;
-
+            
             this.controls.update(deltaTime);
             let actualViewMatrix = this.camera.getViewMatrix();
             const viewProj = mat4.create();
@@ -88,7 +89,8 @@ export class GaussianSplatApp {
         });
 
         const gl = this.gl;
-        gl.disable(gl.DEPTH_TEST); // Disable depth testing
+        gl.clearColor(0.1, 0.1, 0.1, 1.0);
+        gl.disable(gl.DEPTH_TEST);
 
         // Enable blending
         gl.enable(gl.BLEND);
