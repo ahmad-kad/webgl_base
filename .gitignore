@@ -21,4 +21,4 @@ Thumbs.db
 *.swo
 js/concated
 concat.py
-.concated/
+concated/

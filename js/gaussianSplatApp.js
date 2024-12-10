@@ -18,6 +18,16 @@ export class GaussianSplatApp {
         this.setupWorker();
         this.setupWindowEventListeners();
         this.viewerControls = new ViewerControls(this);
+
+        this.uniformScale = 1.0;
+        this.pointScale = 1.0;
+        this.opacity = 1.0;
+        this.splatSize = 1.0;
+        this.useAlphaBlending = true;
+        
+        // Initialize these values after shader compilation
+        this.initializeUniforms();
+
         const frame = (now) => {
             now *= 0.001;
             const deltaTime = now - this.lastFrame;
@@ -29,7 +39,7 @@ export class GaussianSplatApp {
             mat4.multiply(viewProj, this.projectionMatrix, actualViewMatrix);
             this.worker.postMessage({ view: viewProj });
 
-            this.grid.draw(this.projectionMatrix, actualViewMatrix);
+            //this.grid.draw(this.projectionMatrix, actualViewMatrix);
 
             if (this.vertexCount > 0) {
                 this.draw();
@@ -172,6 +182,69 @@ export class GaussianSplatApp {
         this.program = program;
     }
 
+    initializeUniforms() {
+        const gl = this.gl;
+        gl.useProgram(this.program);
+        
+        // Store uniform locations
+        this.u_uniformScale = gl.getUniformLocation(this.program, "u_uniformScale");
+        this.u_pointScale = gl.getUniformLocation(this.program, "u_pointScale");
+        this.u_opacity = gl.getUniformLocation(this.program, "u_opacity");
+        this.u_splatSize = gl.getUniformLocation(this.program, "u_splatSize");
+        this.u_useAlphaBlending = gl.getUniformLocation(this.program, "u_useAlphaBlending");
+        
+        // Set initial values
+        gl.uniform1f(this.u_splatSize, this.splatSize);
+        gl.uniform1i(this.u_useAlphaBlending, this.useAlphaBlending);
+        gl.uniform1f(this.u_uniformScale, this.uniformScale);
+        gl.uniform1f(this.u_pointScale, this.pointScale);
+        gl.uniform1f(this.u_opacity, this.opacity);
+    }
+
+    // Add setter methods for the controls
+    setUniformScale(scale) {
+        this.uniformScale = Math.max(0.1, scale);
+        this.gl.useProgram(this.program);
+        this.gl.uniform1f(this.u_uniformScale, this.uniformScale);
+    }
+
+    setPointScale(scale) {
+        this.pointScale = Math.max(0.1, scale);
+        this.gl.useProgram(this.program);
+        this.gl.uniform1f(this.u_pointScale, this.pointScale);
+    }
+
+    setOpacity(opacity) {
+        this.opacity = Math.max(0.0, Math.min(1.0, opacity));
+        this.gl.useProgram(this.program);
+        this.gl.uniform1f(this.u_opacity, this.opacity);
+    }
+    
+    setSplatSize(size) {
+        this.splatSize = Math.max(0.1, size);
+        this.gl.useProgram(this.program);
+        this.gl.uniform1f(this.u_splatSize, this.splatSize);
+    }
+
+    setAlphaBlending(enabled) {
+        this.useAlphaBlending = enabled;
+        this.gl.useProgram(this.program);
+        this.gl.uniform1i(this.u_useAlphaBlending, enabled);
+        
+        // Update GL blending state
+        if (enabled) {
+            this.gl.enable(this.gl.BLEND);
+            this.gl.blendFunc(
+                this.gl.ONE_MINUS_DST_ALPHA,
+                this.gl.ONE,
+                this.gl.ONE_MINUS_DST_ALPHA,
+                this.gl.ONE
+            );
+        } else {
+            this.gl.disable(this.gl.BLEND);
+        }
+    }
+
     setupWorker() {
         //console.log(createWorker.toString());
         this.worker = new Worker(
@@ -234,6 +307,11 @@ export class GaussianSplatApp {
         this.gl.uniformMatrix4fv(this.u_projection, false, this.projectionMatrix);
         this.gl.uniform2fv(this.u_viewport, new Float32Array([innerWidth, innerHeight]));
         this.gl.uniform2fv(this.u_focal, new Float32Array([this.camera.fx, this.camera.fy]));
+
+        this.gl.uniform1f(this.u_uniformScale, this.uniformScale);
+        this.gl.uniform1f(this.u_pointScale, this.pointScale);
+        this.gl.uniform1f(this.u_opacity, this.opacity);
+
         this.gl.uniformMatrix4fv(this.u_view, false, this.camera.getViewMatrix());
 
         // Set vertices
@@ -245,7 +323,11 @@ export class GaussianSplatApp {
         this.gl.enableVertexAttribArray(this.a_index);
 
         // Draw
+                this.gl.uniform1f(this.u_uniformScale, this.uniformScale);
+        this.gl.uniform1f(this.u_pointScale, this.pointScale);
+        this.gl.uniform1f(this.u_opacity, this.opacity);
         this.gl.drawArraysInstanced(this.gl.TRIANGLE_FAN, 0, 4, this.vertexCount);
+
 
         // Clean up
         this.gl.disableVertexAttribArray(this.a_position);
@@ -277,4 +359,7 @@ export class GaussianSplatApp {
         window.addEventListener("resize", resize);
         resize();
     }
+
 }
+
+
