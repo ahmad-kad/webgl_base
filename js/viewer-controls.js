@@ -61,9 +61,12 @@ export class ViewerControls {
 
         // Point size control
         scrollWrapper.appendChild(this.createPointSizeControl());
+        scrollWrapper.appendChild(this.createGaussianSplatControls());
 
         container.appendChild(scrollWrapper);
         document.body.appendChild(container);
+
+        this.addGaussianSplatStyles();
     }
 
     setupResponsiveScaling() {
@@ -973,5 +976,277 @@ export class ViewerControls {
         `;
 
         styleSheet.textContent += vrStyles;
+    }
+
+    createGaussianSplatControls() {
+        const group = document.createElement('div');
+        group.className = 'control-group gaussian-splat-controls';
+
+        // Create header with title
+        const header = document.createElement('div');
+        header.className = 'control-header';
+        header.innerHTML = `
+            <h3>Gaussian Splat Controls</h3>
+            <div class="control-header-line"></div>
+        `;
+        group.appendChild(header);
+
+        // Create separate sections for different types of controls
+        const createControlSection = (title, controls) => {
+            const section = document.createElement('div');
+            section.className = 'control-section';
+            
+            const sectionTitle = document.createElement('div');
+            sectionTitle.className = 'section-title';
+            sectionTitle.textContent = title;
+            section.appendChild(sectionTitle);
+
+            controls.forEach(control => section.appendChild(control));
+            return section;
+        };
+
+        // Helper function to create slider controls
+        const createSliderControl = (label, min, max, defaultVal, step, callback, tooltip) => {
+            const control = document.createElement('div');
+            control.className = 'slider-control';
+            control.setAttribute('title', tooltip);
+
+            const labelContainer = document.createElement('div');
+            labelContainer.className = 'control-label-container';
+            
+            const labelText = document.createElement('span');
+            labelText.className = 'control-label';
+            labelText.textContent = label;
+
+            const valueDisplay = document.createElement('span');
+            valueDisplay.className = 'control-value';
+            valueDisplay.textContent = defaultVal.toFixed(2);
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.className = 'control-slider';
+            slider.min = min;
+            slider.max = max;
+            slider.step = step;
+            slider.value = defaultVal;
+
+            slider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                valueDisplay.textContent = value.toFixed(2);
+                callback(value);
+            });
+
+            labelContainer.appendChild(labelText);
+            labelContainer.appendChild(valueDisplay);
+            control.appendChild(labelContainer);
+            control.appendChild(slider);
+
+            return control;
+        };
+
+        // Splat Size and Scale Controls Section
+        const sizeScaleControls = [
+            createSliderControl('Splat Size', 0.1, 5.0, 1.0, 0.1, 
+                value => this.renderer.setSplatSize(value),
+                'Controls the base size of all gaussian splats'),
+            createSliderControl('Uniform Scale', 0.1, 5.0, 1.0, 0.1, 
+                value => this.renderer.setUniformScale(value),
+                'Scales all splats uniformly while maintaining relative sizes'),
+            createSliderControl('Point Scale', 0.1, 5.0, 1.0, 0.1, 
+                value => this.renderer.setPointScale(value),
+                'Adjusts the scale of individual points')
+        ];
+
+        // Alpha Blending Controls Section
+        const blendingControl = document.createElement('div');
+        blendingControl.className = 'blending-control';
+        blendingControl.setAttribute('title', 'Toggle alpha blending for transparency effects');
+
+        const blendingLabel = document.createElement('span');
+        blendingLabel.className = 'control-label';
+        blendingLabel.textContent = 'Alpha Blending';
+
+        const toggleWrapper = document.createElement('label');
+        toggleWrapper.className = 'toggle-switch';
+        
+        const toggle = document.createElement('input');
+        toggle.type = 'checkbox';
+        toggle.checked = true;
+        
+        const toggleSlider = document.createElement('span');
+        toggleSlider.className = 'toggle-slider';
+
+        toggle.addEventListener('change', (e) => {
+            this.renderer.setAlphaBlending(e.target.checked);
+        });
+
+        toggleWrapper.appendChild(toggle);
+        toggleWrapper.appendChild(toggleSlider);
+        blendingControl.appendChild(blendingLabel);
+        blendingControl.appendChild(toggleWrapper);
+
+        // Opacity Control Section
+        const opacityControl = createSliderControl('Opacity', 0, 1, 1, 0.01, 
+            value => this.renderer.setOpacity(value),
+            'Controls the global opacity of all splats');
+
+        // Add sections to group
+        group.appendChild(createControlSection('Size & Scale', sizeScaleControls));
+        group.appendChild(createControlSection('Transparency', [blendingControl, opacityControl]));
+
+        // Add styles
+        this.addGaussianSplatStyles();
+
+        return group;
+    }
+
+    addGaussianSplatStyles() {
+        const styleId = 'gaussian-splat-styles';
+        if (document.getElementById(styleId)) return;
+
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            .gaussian-splat-controls {
+                background: rgba(30, 30, 30, 0.95);
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 16px;
+            }
+
+            .control-section {
+                margin-bottom: 24px;
+                padding: 12px;
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 6px;
+            }
+
+            .section-title {
+                color: #4CAF50;
+                font-size: 14px;
+                font-weight: 500;
+                margin-bottom: 12px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .slider-control {
+                margin-bottom: 16px;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 4px;
+                transition: background 0.2s;
+            }
+
+            .slider-control:hover {
+                background: rgba(0, 0, 0, 0.3);
+            }
+
+            .control-label-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+            }
+
+            .control-label {
+                color: #cccccc;
+                font-size: 14px;
+            }
+
+            .control-value {
+                color: #4CAF50;
+                font-family: monospace;
+                font-size: 12px;
+                background: rgba(76, 175, 80, 0.1);
+                padding: 2px 6px;
+                border-radius: 4px;
+                min-width: 40px;
+                text-align: right;
+            }
+
+            .control-slider {
+                -webkit-appearance: none;
+                width: 100%;
+                height: 4px;
+                border-radius: 2px;
+                background: rgba(255, 255, 255, 0.1);
+                outline: none;
+                transition: background 0.2s;
+            }
+
+            .control-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: #4CAF50;
+                cursor: pointer;
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                transition: all 0.2s;
+            }
+
+            .control-slider::-webkit-slider-thumb:hover {
+                background: #45a049;
+                transform: scale(1.1);
+            }
+
+            .blending-control {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 4px;
+                margin-bottom: 16px;
+            }
+
+            .toggle-switch {
+                position: relative;
+                display: inline-block;
+                width: 44px;
+                height: 22px;
+            }
+
+            .toggle-switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+
+            .toggle-slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: rgba(255, 255, 255, 0.1);
+                transition: .4s;
+                border-radius: 22px;
+            }
+
+            .toggle-slider:before {
+                position: absolute;
+                content: "";
+                height: 18px;
+                width: 18px;
+                left: 2px;
+                bottom: 2px;
+                background-color: white;
+                transition: .4s;
+                border-radius: 50%;
+            }
+
+            .toggle-switch input:checked + .toggle-slider {
+                background-color: #4CAF50;
+            }
+
+            .toggle-switch input:checked + .toggle-slider:before {
+                transform: translateX(22px);
+            }
+        `;
+
+        document.head.appendChild(style);
     }
 }

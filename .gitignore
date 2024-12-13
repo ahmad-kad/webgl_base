@@ -19,3 +19,6 @@ Thumbs.db
 # Ignore other common files
 *.swp
 *.swo
+js/concated
+concat.py
+concated/

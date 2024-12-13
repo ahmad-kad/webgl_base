@@ -10,6 +10,10 @@ export class PointCloudRenderer {
         this.gl = gl;
         this.octree = null;
 
+        this.splatSize = 1.0;  // Default splat size
+        this.splatOpacity = 1.0;  // Default opacity
+        this.uniformSize = false;
+        
         this.useOctree = true;
         this.showOctreeDebug = true;
 
