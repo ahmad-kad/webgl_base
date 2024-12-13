@@ -31,7 +31,12 @@ npm start
 
 This will start the application at `http://localhost:8080/` in your default web browser.
 
-### 4. To Stop the Project
+### 4. To Load the Gaussian Splats
+
+Find a .ply or .splat file online and drag it into the browser window.
+Some examples can be found [here](https://huggingface.co/VladKobranov/splats/tree/main)
+
+### 5. To Stop the Project
 ```bash
 ctrl+c
 ```
