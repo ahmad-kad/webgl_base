@@ -6,6 +6,7 @@ import { Camera } from './camera.js';
 import { Controls } from './controls.js';
 import { Grid } from './grid.js';
 import { ViewerControls } from './viewer-controls.js';
+import { SplatAnalytics } from './SplatAnalytics.js';
 
 export class GaussianSplatApp {
     ROW_LENGTH = 3 * 4 + 3 * 4 + 4 + 4;
@@ -17,6 +18,8 @@ export class GaussianSplatApp {
         this.initShader();
         this.setupWorker();
         this.setupWindowEventListeners();
+        this.analytics = new SplatAnalytics();
+
         this.viewerControls = new ViewerControls(this);
 
         this.uniformScale = 1.0;
@@ -24,6 +27,7 @@ export class GaussianSplatApp {
         this.opacity = 1.0;
         this.splatSize = 1.0;
         this.useAlphaBlending = true;
+        this.useUniformSize = false;
         
         // Initialize these values after shader compilation
         this.initializeUniforms();
@@ -219,7 +223,7 @@ export class GaussianSplatApp {
         this.gl.useProgram(this.program);
         this.gl.uniform1f(this.u_opacity, this.opacity);
     }
-    
+
     setSplatSize(size) {
         this.splatSize = Math.max(0.1, size);
         this.gl.useProgram(this.program);
@@ -246,7 +250,6 @@ export class GaussianSplatApp {
     }
 
     setupWorker() {
-        //console.log(createWorker.toString());
         this.worker = new Worker(
             URL.createObjectURL(
                 new Blob(["(", createWorker.toString(), ")(self)"], {
@@ -262,21 +265,14 @@ export class GaussianSplatApp {
                 this.splatData = new Uint8Array(e.data.buffer);
             } else if (e.data.texdata) {
                 const { texdata, texwidth, texheight } = e.data;
-                // console.log("Texture data changed", e.data);
+                
+                // Set up WebGL texture
                 gl.bindTexture(gl.TEXTURE_2D, this.texture);
-                gl.texParameteri(
-                    gl.TEXTURE_2D,
-                    gl.TEXTURE_WRAP_S,
-                    gl.CLAMP_TO_EDGE,
-                );
-                gl.texParameteri(
-                    gl.TEXTURE_2D,
-                    gl.TEXTURE_WRAP_T,
-                    gl.CLAMP_TO_EDGE,
-                );
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
+    
                 gl.texImage2D(
                     gl.TEXTURE_2D,
                     0,
@@ -286,34 +282,71 @@ export class GaussianSplatApp {
                     0,
                     gl.RGBA_INTEGER,
                     gl.UNSIGNED_INT,
-                    texdata,
+                    texdata
                 );
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                
+                // Store data for analytics
+                this.textureData = new Uint32Array(texdata.buffer);  // Make sure we have the right type
+                this.texwidth = texwidth;
+                this.texheight = texheight;
+    
             } else if (e.data.depthIndex) {
-                const { depthIndex, viewProj } = e.data;
-                //console.log("Depth index changed", e.data);
+                const { depthIndex, viewProj, vertexCount } = e.data;
+                
+                // Store the depth index data
+                this.depthIndexData = new Uint32Array(depthIndex);  // Make sure we have the right type
+                this.vertexCount = vertexCount;
+    
+                // Update WebGL buffers
                 gl.bindBuffer(gl.ARRAY_BUFFER, this.indexBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, depthIndex, gl.DYNAMIC_DRAW);
-                this.vertexCount = e.data.vertexCount;
+    
+                // Now that we have both texture and depth data, update analytics
+                if (this.analytics && this.textureData) {
+                    this.analytics.updateSceneData({
+                        depthIndex: this.depthIndexData,
+                        textureData: this.textureData,
+                        texwidth: this.texwidth,
+                        texheight: this.texheight,
+                        viewMatrix: this.camera.getViewMatrix(),
+                        projectionMatrix: this.projectionMatrix,
+                        viewport: [innerWidth, innerHeight],
+                        focal: [this.camera.fx, this.camera.fy]
+                    });
+                }
             }
         };
     }
 
+    updateAnalytics() {
+        if (!this.analytics || !this.textureData || !this.depthIndexData) return;
+
+        const viewMatrix = this.camera.getViewMatrix();
+        
+        this.analytics.updateSceneData({
+            depthIndex: this.depthIndexData,
+            textureData: this.textureData,
+            texwidth: this.texwidth,
+            texheight: this.texheight,
+            viewMatrix: viewMatrix,
+            projectionMatrix: this.projectionMatrix,
+            viewport: [innerWidth, innerHeight],
+            focal: [this.camera.fx, this.camera.fy]
+        });
+    }
+
+    // Update the draw method
     draw() {
         this.gl.useProgram(this.program);
-
+    
         // Set uniforms
         this.gl.uniformMatrix4fv(this.u_projection, false, this.projectionMatrix);
         this.gl.uniform2fv(this.u_viewport, new Float32Array([innerWidth, innerHeight]));
         this.gl.uniform2fv(this.u_focal, new Float32Array([this.camera.fx, this.camera.fy]));
-
-        this.gl.uniform1f(this.u_uniformScale, this.uniformScale);
-        this.gl.uniform1f(this.u_pointScale, this.pointScale);
-        this.gl.uniform1f(this.u_opacity, this.opacity);
-
-        this.gl.uniformMatrix4fv(this.u_view, false, this.camera.getViewMatrix());
-
+    
+        const viewMatrix = this.camera.getViewMatrix();
+        this.gl.uniformMatrix4fv(this.u_view, false, viewMatrix);
+    
         // Set vertices
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
         this.gl.vertexAttribPointer(this.a_position, 2, this.gl.FLOAT, false, 0, 0);
@@ -321,14 +354,18 @@ export class GaussianSplatApp {
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.indexBuffer);
         this.gl.vertexAttribIPointer(this.a_index, 1, this.gl.INT, false, 0, 0);
         this.gl.enableVertexAttribArray(this.a_index);
-
+    
+        // Update analytics if in render mode
+        if (this.analytics && this.analytics.colorMode === 'render') {
+            this.updateAnalytics();
+        }
+    
         // Draw
-                this.gl.uniform1f(this.u_uniformScale, this.uniformScale);
+        this.gl.uniform1f(this.u_uniformScale, this.uniformScale);
         this.gl.uniform1f(this.u_pointScale, this.pointScale);
         this.gl.uniform1f(this.u_opacity, this.opacity);
         this.gl.drawArraysInstanced(this.gl.TRIANGLE_FAN, 0, 4, this.vertexCount);
-
-
+    
         // Clean up
         this.gl.disableVertexAttribArray(this.a_position);
         this.gl.disableVertexAttribArray(this.a_index);
@@ -359,6 +396,8 @@ export class GaussianSplatApp {
         window.addEventListener("resize", resize);
         resize();
     }
+
+    
 
 }
 
