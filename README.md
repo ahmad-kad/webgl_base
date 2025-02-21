@@ -1,15 +1,47 @@
-# Fall 2024, CS116A Final Project
+# WebGL Gaussian Splat Viewer
 
-## Project Overview
+A high-performance web-based viewer for Gaussian Splat rendering, supporting multiple PLY formats and offering an immersive 3D visualization experience.
 
-### Team Information
-**Team Members:**
-1. Ahmad Kaddoura
-3. Muhammad Rizki Miftha Alhamid
+## Overview
+
+This project implements a WebGL-based renderer for Gaussian Splats, featuring:
+
+- Real-time rendering of large point cloud datasets
+- Support for multiple PLY file formats (Standard, INRIA v1/v2, PlayCanvas)
+- Advanced camera controls with intuitive navigation
+- Octree-based spatial partitioning for improved performance
+- Optional VR support for immersive visualization (Quest and Vision Pro)
+
+## Features
+
+### Rendering Capabilities
+- Gaussian splat rendering with customizable parameters
+- Dynamic point size and opacity controls
+- Depth-aware rendering with proper transparency
+- Adaptive level of detail using octree structure
+
+### File Format Support
+- Standard PLY files
+- INRIA v1/v2 formats with spherical harmonics
+- PlayCanvas compressed formats
+- Automatic format detection and parsing
+
+### Controls
+- WASD keys for movement
+- QE keys for vertical movement
+- IJKL keys for camera rotation
+- Mouse interaction for point selection
+- Double-click or F key for camera reset
 
 ## Getting Started
 
-### 1. Clone the Repository
+### Prerequisites
+- Modern web browser with WebGL support
+- Node.js and npm installed
+
+### Installation
+
+1. Clone the repository:
 
 ```bash
 git clone https://github.com/ahmad-kad/webgl_base.git
